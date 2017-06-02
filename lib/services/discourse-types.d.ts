@@ -40,7 +40,3 @@ export interface DiscoursePost {
     cooked: string;
     [key: string]: string;
 }
-
-export interface DiscourseHandle extends ServiceAPIHandle {
-    discourse: DiscourseService;
-}

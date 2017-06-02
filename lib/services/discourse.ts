@@ -19,7 +19,7 @@ import * as _ from 'lodash';
 import * as path from 'path';
 import * as request from 'request-promise';
 import { MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext } from '../utils/message-types';
-import {DiscourseHandle, DiscoursePost, DiscoursePostEmitContext, DiscourseTopicEmitContext} from './discourse-types';
+import { DiscoursePost, DiscoursePostEmitContext, DiscourseTopicEmitContext } from './discourse-types';
 import { MessageService } from './message-service';
 import { ServiceEmitter, ServiceListener } from './service-types';
 
@@ -221,10 +221,10 @@ export class DiscourseService extends MessageService implements ServiceListener,
 
     /**
      * Retrieve Discourse API SDK handle (currently none).
-     * @return  Object containing this, as best approximation for a Discourse SDK
+     * @return  void (currently no Discourse SDK API handle)
      */
-    get apiHandle(): DiscourseHandle {
-        return { discourse: this };
+    get apiHandle(): void {
+        return;
     }
 }
 
