@@ -31,9 +31,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     private static session = new Session(process.env.FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN);
 
     /**
-     * Promise to turn the data enqueued into a generic message format
-     * @param data - Raw data from the enqueue, remembering this is as dumb and quick as possible
-     * @returns {Bluebird<ReceiptContext>} - A promise that resolves to the generic form of the event
+     * Promise to turn the data enqueued into a generic message format.
+     * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
+     * @returns     A promise that resolves to the generic form of the event.
      */
     public makeGeneric(data: MessengerEvent): Promise<ReceiptContext> {
         // Separate out some parts of the message
@@ -73,9 +73,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Promise to turn the generic message format into a specific form to be emitted
-     * @param data - Generic message format object to be encoded
-     * @returns {Bluebird<FlowdockEmitContext>} - Promise that resolves to the emit suitable form
+     * Promise to turn the generic message format into a specific form to be emitted.
+     * @param data  Generic message format object to be encoded.
+     * @returns     Promise that resolves to the emit suitable form.
      */
     public makeSpecific(data: TransmitContext): Promise<FlowdockEmitContext> {
         // Build a string for the title, if appropriate.
@@ -95,9 +95,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Turns the generic, messenger, name for an event into a specific trigger name for this class
-     * @param eventType - Name of the event to translate, eg 'message'
-     * @returns {string} - This class's equivalent, eg 'post'
+     * Turns the generic, messenger, name for an event into a specific trigger name for this class.
+     * @param eventType  Name of the event to translate, eg 'message'.
+     * @returns          This class's equivalent, eg 'post'.
      */
     public translateEventName(eventType: string): string {
         const equivalents: {[key: string]: string} = {
@@ -107,10 +107,10 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Promise to find the comment history of a particular thread
-     * @param thread - id of the thread to search
-     * @param room - id of the room in which the thread resides
-     * @param filter - criteria to match
+     * Promise to find the comment history of a particular thread.
+     * @param thread  id of the thread to search.
+     * @param room    id of the room in which the thread resides.
+     * @param filter  criteria to match.
      */
     public fetchNotes(thread: string, room: string, filter: RegExp): Promise<string[]> {
         // Query the API
@@ -129,10 +129,10 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Search for the specified value associated with a user
-     * @param user - username to search associated with
-     * @param key - name of the value to retrieve
-     * @returns {Bluebird<string>} - Promise that resolves to the value
+     * Search for the specified value associated with a user.
+     * @param user  username to search associated with.
+     * @param key   name of the value to retrieve.
+     * @returns     Promise that resolves to the value.
      */
     public fetchValue(user: string, key: string): Promise<string> {
         // Retrieve a particular regex from the 1-1 message history of the user
@@ -145,7 +145,7 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Activate this service as a listener
+     * Activate this service as a listener.
      */
     protected activateMessageListener(): void {
         // Get a list of known flows from the session
@@ -185,9 +185,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Deliver the payload to the service. Sourcing the relevant context has already been performed
-     * @param data - The object to be delivered to the service
-     * @returns {Promise<MessengerEmitResponse>} - Response from the service endpoint
+     * Deliver the payload to the service. Sourcing the relevant context has already been performed.
+     * @param data  The object to be delivered to the service.
+     * @returns     Response from the service endpoint.
      */
     protected sendPayload(data: FlowdockEmitContext): Promise<MessengerEmitResponse> {
         const body = _.cloneDeep(data);
@@ -220,9 +220,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
 
     /**
      * Search for recent private messages with our account that match on username and regex.
-     * @param username - scope of the private messages to search
-     * @param filter - Narrow our search to just matches
-     * @returns {Bluebird<string[]>} - Promise that resolves to the message strings
+     * @param username  scope of the private messages to search.
+     * @param filter    Narrow our search to just matches.
+     * @returns         Promise that resolves to the message strings.
      */
     private fetchPrivateMessages(username: string, filter: RegExp): Promise<string[]> {
         // Fetch the id then 1-1 history associated with the username
@@ -241,9 +241,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Fetch a user's id from their username
-     * @param username - username to search for
-     * @returns {Bluebird<string>} - id of the user
+     * Fetch a user's id from their username.
+     * @param username  username to search for.
+     * @returns         id of the user.
      */
     private fetchUserId(username: string): Promise<string> {
         // Get all the users of the service
@@ -263,9 +263,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Utility function to structure the flowdock session as a promise a little
-     * @param path - Endpoint to retrieve
-     * @returns {Bluebird<any>} - response from the session
+     * Utility function to structure the flowdock session as a promise a little.
+     * @param path  Endpoint to retrieve.
+     * @returns     response from the session.
      */
     private fetchFromSession(path: string): Promise<any> {
         return new Promise<any>((resolve, reject) => {
@@ -280,7 +280,7 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     }
 
     /**
-     * Get the service name, as required by the framework
+     * Get the service name, as required by the framework.
      * @return  The specific service name for Flowdock.
      */
     get serviceName(): string {
@@ -299,24 +299,24 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
 }
 
 /**
- * Build this class, typed and activated as a listener
- * @returns {ServiceListener}
+ * Build this class, typed and activated as a listener.
+ * @returns  Service Listener object, awakened and ready to go.
  */
 export function createServiceListener(): ServiceListener {
     return new FlowdockService(true);
 }
 
 /**
- * Build this class, typed as an emitter
- * @returns {ServiceEmitter}
+ * Build this class, typed as an emitter.
+ * @returns  Service Emitter object, ready for your events.
  */
 export function createServiceEmitter(): ServiceEmitter {
     return new FlowdockService(false);
 }
 
 /**
- * Build this class, typed as a message service
- * @returns {MessageService}
+ * Build this class, typed as a message service.
+ * @returns  Message Service object, ready to convert events.
  */
 export function createMessageService(): MessageService {
     return new FlowdockService(false);
@@ -324,8 +324,8 @@ export function createMessageService(): MessageService {
 
 //noinspection JSUnusedGlobalSymbols
 /**
- * Build this class, typed as a data hub
- * @returns {DataHub}
+ * Build this class, typed as a data hub.
+ * @returns Data Hub object, ready to retrieve user data.
  */
 export function createDataHub(): DataHub {
     return new FlowdockService(false);

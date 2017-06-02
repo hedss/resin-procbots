@@ -38,8 +38,8 @@ export class SyncBot extends ProcBot {
     private hub: DataHub;
 
     /**
-     * Creates a SyncBot using SYNCBOT_MAPPINGS and SYNCBOT_HUB_SERVICE from the environment
-     * @param name - identifier for this bot, defaults to SyncBot
+     * Creates a SyncBot using SYNCBOT_MAPPINGS and SYNCBOT_HUB_SERVICE from the environment.
+     * @param name  identifier for this bot, defaults to SyncBot.
      */
     constructor(name = 'SyncBot') {
         super(name);
@@ -61,9 +61,9 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Awaken services and register the event processors
-     * @param from - Definition of a flow to listen to
-     * @param to - Definition of a flow to emit to
+     * Awaken services and register the event processors.
+     * @param from  Definition of a flow to listen to.
+     * @param to    Definition of a flow to emit to.
      */
     private register(from: FlowDefinition, to: FlowDefinition) {
         // Ensure that the adapters are running
@@ -82,11 +82,10 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Create a function that will route a data payload to the specified room
-     * @param from - Definition of a flow to listen to
-     * @param to - Definition of a flow to emit to
-     * @returns {(_registration:ServiceRegistration, data:ServiceEvent)=>Promise<void>} ...
-     * ... function that routes the payload
+     * Create a function that will route a data payload to the specified room.
+     * @param from  Definition of a flow to listen to.
+     * @param to    Definition of a flow to emit to.
+     * @returns     function that routes the payload.
      */
     private createRouter(from: FlowDefinition, to: FlowDefinition): ServiceListenerMethod {
         // This function returns a function, watch out!
@@ -130,9 +129,9 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Report an error back to the source of the event
-     * @param error - error to report
-     * @param event - source event that should be reflected into target context
+     * Report an error back to the source of the event.
+     * @param error  error to report.
+     * @param event  source event that should be reflected into target context.
      */
     private handleError(error: Error, event: HandleContext): void {
         // Put this on the log service
@@ -170,10 +169,10 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Retrieve or create a service that can understand the generic message format
-     * @param key - Name of the service to seek
-     * @param data - Instantiation data for the service
-     * @returns {MessageService} - Object which implements the generic message abstract
+     * Retrieve or create a service that can understand the generic message format.
+     * @param key   Name of the service to seek.
+     * @param data  Instantiation data for the service.
+     * @returns     Object which implements the generic message abstract.
      */
     private getMessageService(key: string, data?: any): MessageService {
         // Attempt to retrieve and return the existing messenger
@@ -189,10 +188,10 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Connect two threads with comments about each other
-     * @param event - Event with the two threads specified
-     * @param type - What to connect, must be thread
-     * @returns {Bluebird<void>} - Resolves when connection is stored
+     * Connect two threads with comments about each other.
+     * @param event  Event with the two threads specified.
+     * @param type   What to connect, must be thread.
+     * @returns      Resolves when connection is stored.
      */
     private createConnection(event: HandleContext, type: 'thread'): Promise<void> {
         // Find details of the threads to pair
@@ -245,10 +244,10 @@ export class SyncBot extends ProcBot {
 
     //noinspection JSUnusedLocalSymbols
     /**
-     * Pass a transmission context to the emitter
-     * @param event - Standardised transmission context to emit
-     * @param _type - Type of event to create, must be 'comment'
-     * @returns {Bluebird<string>} - Promise that will resolve to the id of the created message
+     * Pass a transmission context to the emitter.
+     * @param event  Standardised transmission context to emit.
+     * @param _type  Type of event to create, must be 'comment'.
+     * @returns      Promise that will resolve to the id of the created message.
      */
     private create(event: TransmitContext, _type: 'comment'): Promise<string> {
         // Pass the event to the emitter
@@ -272,9 +271,9 @@ export class SyncBot extends ProcBot {
 
     //noinspection JSUnusedLocalSymbols
     /**
-     * Record to the console some details from the event
-     * @param event - Event to record, will only pass on safe information
-     * @param _type - Unused, type of event synchronised
+     * Record to the console some details from the event.
+     * @param event  Event to record, will only pass on safe information.
+     * @param _type  Unused, type of event synchronised.
      */
     private logSuccess(event: MessengerContext, _type: string): void {
         const output = {source: event.source, title: event.title, text: event.text, target: event.to};
@@ -282,9 +281,9 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * This should be called when something really goes wrong, and in-app reports fail
-     * @param error - Error to report
-     * @param event - Event that caused the error
+     * This should be called when something really goes wrong, and in-app reports fail.
+     * @param error  Error to report.
+     * @param event  Event that caused the error.
      */
     private logError(error: Error, event: MessengerContext): void {
         // Do what we can to make this event obvious in the logs
@@ -301,10 +300,10 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Use the source to provide the detail requested
-     * @param event - Event to scrutinise and mutate
-     * @param type - property to search for, must be 'user'
-     * @returns {Bluebird<string>} - Resolves to the found property
+     * Use the source to provide the detail requested.
+     * @param event  Event to scrutinise and mutate.
+     * @param type   property to search for, must be 'user'.
+     * @returns      Resolves to the found property.
      */
     private useProvided(event: HandleContext, type: 'user'): Promise<string> {
         return new Promise<string>((resolve) => {
@@ -331,10 +330,10 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Use the environment SYNCBOT_SYSTEM_MESSAGE_ACCOUNTS to provide the detail requested
-     * @param event - Event to scrutinise and mutate
-     * @param type - property to search for, must be 'user' or 'token'
-     * @returns {Bluebird<string>} - Resolves to the found property
+     * Use the environment SYNCBOT_SYSTEM_MESSAGE_ACCOUNTS to provide the detail requested.
+     * @param event  Event to scrutinise and mutate.
+     * @param type   property to search for, must be 'user' or 'token'.
+     * @returns      Resolves to the found property.
      */
     private useSystem(event: HandleContext, type: 'user'|'token'): Promise<string> {
         return new Promise<string>((resolve) => {
@@ -350,10 +349,10 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Use the thread history to provide the detail requested
-     * @param event - Event to scrutinise and mutate
-     * @param type - property to search for, must be 'thread'
-     * @returns {Bluebird<string>} - Resolves to the found property
+     * Use the thread history to provide the detail requested.
+     * @param event  Event to scrutinise and mutate.
+     * @param type   property to search for, must be 'thread'.
+     * @returns      Resolves to the found property.
      */
     private useConnected(event: HandleContext, type: 'thread'): Promise<string> {
         // Check the pretext; then capture the id text (roughly speaking include base64, exclude html tag)
@@ -373,10 +372,10 @@ export class SyncBot extends ProcBot {
     }
 
     /**
-     * Use the hub service to provide the detail requested
-     * @param event - Event to scrutinise and mutate
-     * @param type - property to search for, must be 'token'
-     * @returns {Bluebird<string>} - Resolves to the found property
+     * Use the hub service to provide the detail requested.
+     * @param event  Event to scrutinise and mutate.
+     * @param type   property to search for, must be 'token'.
+     * @returns      Resolves to the found property.
      */
     private useHub(event: HandleContext, type: 'token'): Promise<string> {
         let user: string | undefined = undefined;

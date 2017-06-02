@@ -29,9 +29,9 @@ export class DiscourseService extends MessageService implements ServiceListener,
     private postsSynced = new Set<number>();
 
     /**
-     * Promise to turn the data enqueued into a generic message format
-     * @param data - Raw data from the enqueue, remembering this is as dumb and quick as possible
-     * @returns {Bluebird<ReceiptContext>} - A promise that resolves to the generic form of the event
+     * Promise to turn the data enqueued into a generic message format.
+     * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
+     * @returns     A promise that resolves to the generic form of the event.
      */
     public makeGeneric(data: MessengerEvent): Promise<ReceiptContext> {
         // Encode once the common parts of a request
@@ -80,9 +80,9 @@ export class DiscourseService extends MessageService implements ServiceListener,
     }
 
     /**
-     * Promise to turn the generic message format into a specific form to be emitted
-     * @param data - Generic message format object to be encoded
-     * @returns {Bluebird<FlowdockEmitContext>} - Promise that resolves to the emit suitable form
+     * Promise to turn the generic message format into a specific form to be emitted.
+     * @param data  Generic message format object to be encoded.
+     * @returns     Promise that resolves to the emit suitable form.
      */
     public makeSpecific(data: TransmitContext): Promise<DiscourseTopicEmitContext|DiscoursePostEmitContext> {
         // Attempt to find the thread ID to know if this is a new topic or not
@@ -115,9 +115,9 @@ export class DiscourseService extends MessageService implements ServiceListener,
     }
 
     /**
-     * Turns the generic, messenger, name for an event into a specific trigger name for this class
-     * @param eventType - Name of the event to translate, eg 'message'
-     * @returns {string} - This class's equivalent, eg 'post'
+     * Turns the generic, messenger, name for an event into a specific trigger name for this class.
+     * @param eventType  Name of the event to translate, eg 'message'.
+     * @returns          This class's equivalent, eg 'post'.
      */
     public translateEventName(eventType: string): string {
         const equivalents: {[key: string]: string} = {
@@ -127,10 +127,10 @@ export class DiscourseService extends MessageService implements ServiceListener,
     }
 
     /**
-     * Promise to find the comment history of a particular thread
-     * @param thread - id of the thread to search
-     * @param _room - id of the room in which the thread resides
-     * @param filter - criteria to match
+     * Promise to find the comment history of a particular thread.
+     * @param thread  id of the thread to search.
+     * @param _room   id of the room in which the thread resides.
+     * @param filter  criteria to match.
      */
     public fetchNotes(thread: string, _room: string, filter: RegExp): Promise<string[]> {
         // Query the API
@@ -156,7 +156,7 @@ export class DiscourseService extends MessageService implements ServiceListener,
     }
 
     /**
-     * Activate this service as a listener
+     * Activate this service as a listener.
      */
     protected activateMessageListener(): void {
         // Create an endpoint for this listener and protect against double-web-hooks
@@ -182,9 +182,9 @@ export class DiscourseService extends MessageService implements ServiceListener,
     }
 
     /**
-     * Deliver the payload to the service. Sourcing the relevant context has already been performed
-     * @param data - The object to be delivered to the service
-     * @returns {Promise<MessengerEmitResponse>} - Response from the service endpoint
+     * Deliver the payload to the service. Sourcing the relevant context has already been performed.
+     * @param data  The object to be delivered to the service.
+     * @returns     Response from the service endpoint.
      */
     protected sendPayload(data: DiscoursePostEmitContext|DiscourseTopicEmitContext): Promise<MessengerEmitResponse> {
         // Extract a couple of details from out of the context
@@ -212,7 +212,7 @@ export class DiscourseService extends MessageService implements ServiceListener,
     }
 
     /**
-     * Get the service name, as required by the framework
+     * Get the service name, as required by the framework.
      * @return  The service name for Discourse.
      */
     get serviceName(): string {
@@ -221,7 +221,7 @@ export class DiscourseService extends MessageService implements ServiceListener,
 
     /**
      * Retrieve Discourse API SDK handle (currently none).
-     * @return  void (currently no Discourse SDK API handle)
+     * @return  void (currently no Discourse SDK API handle).
      */
     get apiHandle(): void {
         return;
@@ -229,24 +229,24 @@ export class DiscourseService extends MessageService implements ServiceListener,
 }
 
 /**
- * Build this class, typed and activated as a listener
- * @returns {ServiceListener}
+ * Build this class, typed and activated as a listener.
+ * @returns  Service Listener object, awakened and ready to go.
  */
 export function createServiceListener(): ServiceListener {
     return new DiscourseService(true);
 }
 
 /**
- * Build this class, typed as an emitter
- * @returns {ServiceEmitter}
+ * Build this class, typed as an emitter.
+ * @returns  Service Emitter object, ready for your events.
  */
 export function createServiceEmitter(): ServiceEmitter {
     return new DiscourseService(false);
 }
 
 /**
- * Build this class, typed as a message service
- * @returns {MessageService}
+ * Build this class, typed as a message service.
+ * @returns  Message Service object, ready to convert events.
  */
 export function createMessageService(): MessageService {
     return new DiscourseService(false);

@@ -41,11 +41,11 @@ import {
 
 export abstract class MessageService extends WorkerClient<string|null> implements ServiceListener, ServiceEmitter {
     /**
-     * Make a handle context, using a receipt context and some extra information
-     * @param event - Event to be converted
-     * @param to - Destination for the handle context
-     * @param toIds - Pre-populate the toIds, if desired
-     * @returns {HandleContext} - newly created context for handling a message
+     * Make a handle context, using a receipt context and some extra information.
+     * @param event  Event to be converted.
+     * @param to     Destination for the handle context.
+     * @param toIds  Pre-populate the toIds, if desired.
+     * @returns      newly created context for handling a message.
      */
     public static initHandleContext(event: ReceiptContext, to: string, toIds: HandleIds = {}): HandleContext {
         return {
@@ -66,15 +66,15 @@ export abstract class MessageService extends WorkerClient<string|null> implement
 
     /**
      * A place to put output for debug and reference.
-     * @type {Logger}
+     * @type {Logger}.
      */
     protected static logger = new Logger();
 
     /**
-     * Encode the metadata of an event into a string to embed in the message
-     * @param data - event to gather details from
-     * @param format - Optional, markdown or plaintext, defaults to markdown
-     * @returns {string} - Text with data embedded
+     * Encode the metadata of an event into a string to embed in the message.
+     * @param data    event to gather details from.
+     * @param format  Optional, markdown or plaintext, defaults to markdown.
+     * @returns       Text with data embedded.
      */
     protected static stringifyMetadata(data: TransmitContext, format: 'markdown'|'plaintext' = 'markdown'): string {
         // Retrieve publicity indicators from the environment
@@ -92,9 +92,9 @@ export abstract class MessageService extends WorkerClient<string|null> implement
     }
 
     /**
-     * Given a basic string this will extract a more rich context for the event, if embedded
-     * @param message - basic string that may contain metadata
-     * @returns {Metadata} - object of content, genesis and hidden
+     * Given a basic string this will extract a more rich context for the event, if embedded.
+     * @param message  basic string that may contain metadata.
+     * @returns        object of content, genesis and hidden.
      */
     protected static extractMetadata(message: string): Metadata {
         // Retrieve publicity indicators from the environment
@@ -124,24 +124,24 @@ export abstract class MessageService extends WorkerClient<string|null> implement
     }
 
     /**
-     * A singleton express instance for all web-hook based message services to share
-     * @type {Express}
+     * A singleton express instance for all web-hook based message services to share.
+     * @type {Express}.
      */
     private static _app: express.Express;
 
     /**
-     * A boolean flag for if this object has been activated as a listener
-     * @type {boolean}
+     * A boolean flag for if this object has been activated as a listener.
+     * @type {boolean}.
      */
     private listening: boolean = false;
     /**
-     * An object of arrays storing events by trigger and their actions
+     * An object of arrays storing events by trigger and their actions.
      */
     private _eventListeners: { [event: string]: ServiceRegistration[] } = {};
 
     /**
-     * Create or retrieve the singleton express app
-     * @returns {express.Express}
+     * Create or retrieve the singleton express app.
+     * @returns  Singleton express server app.
      */
     protected static get app(): express.Express {
         if (!MessageService._app) {
@@ -161,7 +161,7 @@ export abstract class MessageService extends WorkerClient<string|null> implement
 
     /**
      * Build this service, specifying whether to awaken as a listener.
-     * @param listener - whether to start listening during construction
+     * @param listener  whether to start listening during construction.
      */
     constructor(listener: boolean) {
         super();
@@ -171,7 +171,7 @@ export abstract class MessageService extends WorkerClient<string|null> implement
     }
 
     /**
-     * Start the object listening if it isn't already
+     * Start the object listening if it isn't already.
      */
     public listen() {
         // Ensure the code in the child object gets executed a maximum of once
@@ -183,8 +183,8 @@ export abstract class MessageService extends WorkerClient<string|null> implement
     }
 
     /**
-     * Store an event of interest, so that the method gets triggered appropriately
-     * @param registration - Registration object with event trigger and other details
+     * Store an event of interest, so that the method gets triggered appropriately.
+     * @param registration  Registration object with event trigger and other details.
      */
     public registerEvent(registration: ServiceRegistration): void {
         // Store each event registration in an object of arrays.
@@ -197,9 +197,9 @@ export abstract class MessageService extends WorkerClient<string|null> implement
     }
 
     /**
-     * Emit data to the service
-     * @param data - Service Emit Request to send, if relevant
-     * @returns {Promise<MessengerEmitResponse>} - Details of the successful transmission from the service
+     * Emit data to the service.
+     * @param data  Service Emit Request to send, if relevant.
+     * @returns     Details of the successful transmission from the service.
      */
     public sendData(data: ServiceEmitRequest): Promise<MessengerEmitResponse> {
         // Check that the data has specifies a task for our emitter, before passing it on
@@ -215,7 +215,7 @@ export abstract class MessageService extends WorkerClient<string|null> implement
 
      /**
      * Queue an event ready for running in a child.
-     * @param data - The WorkerEvent to add to the queue for processing.
+     * @param data  The WorkerEvent to add to the queue for processing.
      */
     public queueEvent(data: MessengerWorkerEvent) {
         // This type guards a simple pass-through
@@ -223,50 +223,50 @@ export abstract class MessageService extends WorkerClient<string|null> implement
     }
 
     /**
-     * Promise to find the comment history of a particular thread
-     * @param thread - id of the thread to search
-     * @param room - id of the room in which the thread resides
-     * @param filter - criteria to match
+     * Promise to find the comment history of a particular thread.
+     * @param thread  id of the thread to search.
+     * @param room    id of the room in which the thread resides.
+     * @param filter  criteria to match.
      */
     public abstract fetchNotes(thread: string, room: string, filter: RegExp): Promise<string[]>
 
     /**
-     * Promise to turn the data enqueued into a generic message format
-     * @param data - Raw data from the enqueue, remembering this is as dumb and quick as possible
-     * @returns {Promise<ReceiptContext>} - A promise that resolves to the generic form of the event
+     * Promise to turn the data enqueued into a generic message format.
+     * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
+     * @returns     A promise that resolves to the generic form of the event.
      */
     public abstract makeGeneric(data: MessengerEvent): Promise<ReceiptContext>;
 
     /**
-     * Promise to turn a generic message format into a form suitable for emitting
-     * @param data - Generic message format to encode
-     * @returns {Promise<ServiceEmitContext>} - A promise that resolves to an emit context, which is as dumb as possible
+     * Promise to turn a generic message format into a form suitable for emitting.
+     * @param data  Generic message format to encode.
+     * @returns     A promise that resolves to an emit context, which is as dumb as possible.
      */
     public abstract makeSpecific(data: TransmitContext): Promise<ServiceEmitContext>;
 
     /**
-     * Turns the generic, messenger, name for an event into a specific trigger name for this class
-     * @param eventType - Name of the event to translate, eg 'message'
-     * @returns {string} - This class's equivalent, eg 'post'
+     * Turns the generic, messenger, name for an event into a specific trigger name for this class.
+     * @param eventType  Name of the event to translate, eg 'message'.
+     * @returns          This class's equivalent, eg 'post'.
      */
     public abstract translateEventName(eventType: string): string;
 
     /**
-     * Awaken this class as a listener
+     * Awaken this class as a listener.
      */
     protected abstract activateMessageListener(): void;
 
     /**
-     * Deliver the payload to the service. Sourcing the relevant context has already been performed
-     * @param data - The object to be delivered to the service
-     * @returns {Promise<MessengerEmitResponse>} - Response from the service endpoint
+     * Deliver the payload to the service. Sourcing the relevant context has already been performed.
+     * @param data  The object to be delivered to the service.
+     * @returns     Response from the service endpoint.
      */
     protected abstract sendPayload(data: ServiceEmitContext): Promise<MessengerEmitResponse>
 
     /**
-     * Pass an event to registered listenerMethods
-     * @param event - enqueued event from the listener
-     * @returns {Bluebird<void>}
+     * Pass an event to registered listenerMethods.
+     * @param event  enqueued event from the listener.
+     * @returns      Promise that resolves once the event is handled.
      */
     protected handleEvent = (event: MessengerEvent): Promise<void> => {
         // Retrieve and execute all the listener methods, squashing their responses
@@ -277,9 +277,9 @@ export abstract class MessageService extends WorkerClient<string|null> implement
     }
 
     /**
-     * Get a Worker object for the provided event, threaded by context
-     * @param event - event as enqueued by the listener
-     * @returns {Worker} - worker for the context associated
+     * Get a Worker object for the provided event, threaded by context.
+     * @param event  event as enqueued by the listener.
+     * @returns      worker for the context associated.
      */
     protected getWorker = (event: MessengerWorkerEvent): Worker<string|null> => {
         // Attempt to retrieve an active worker for the context

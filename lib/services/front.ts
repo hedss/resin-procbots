@@ -29,10 +29,10 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     private static session = new Front(process.env.FRONT_LISTENER_ACCOUNT_API_TOKEN);
 
     /**
-     * Promise to find the comment history of a particular thread
-     * @param thread - id of the thread to search
-     * @param _room - id of the room in which the thread resides
-     * @param filter - criteria to match
+     * Promise to find the comment history of a particular thread.
+     * @param thread  id of the thread to search.
+     * @param _room   id of the room in which the thread resides.
+     * @param filter  criteria to match.
      */
     public fetchNotes(thread: string, _room: string, filter: RegExp): Promise<string[]> {
         return FrontService.session.conversation.listComments({conversation_id: thread})
@@ -46,9 +46,9 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     }
 
     /**
-     * Promise to turn the data enqueued into a generic message format
-     * @param data - Raw data from the enqueue, remembering this is as dumb and quick as possible
-     * @returns {Bluebird<ReceiptContext>} - A promise that resolves to the generic form of the event
+     * Promise to turn the data enqueued into a generic message format.
+     * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
+     * @returns     A promise that resolves to the generic form of the event.
      */
     public makeGeneric(data: ServiceEvent): Promise<ReceiptContext> {
         // Calculate common request details once
@@ -113,9 +113,9 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     }
 
     /**
-     * Promise to turn the generic message format into a specific form to be emitted
-     * @param data - Generic message format object to be encoded
-     * @returns {Bluebird<FlowdockEmitContext>} - Promise that resolves to the emit suitable form
+     * Promise to turn the generic message format into a specific form to be emitted.
+     * @param data  Generic message format object to be encoded.
+     * @returns     Promise that resolves to the emit suitable form.
      */
     public makeSpecific(data: TransmitContext): Promise<FrontCommentEmitContext|FrontConversationEmitContext> {
         // Attempt to find the thread ID to know if this is a new conversation or not
@@ -169,9 +169,9 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     }
 
     /**
-     * Turns the generic, messenger, name for an event into a specific trigger name for this class
-     * @param eventType - Name of the event to translate, eg 'message'
-     * @returns {string} - This class's equivalent, eg 'post'
+     * Turns the generic, messenger, name for an event into a specific trigger name for this class.
+     * @param eventType  Name of the event to translate, eg 'message'.
+     * @returns          This class's equivalent, eg 'post'.
      */
     public translateEventName(eventType: string): string {
         const equivalents: {[key: string]: string} = {
@@ -181,7 +181,7 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     }
 
     /**
-     * Activate this service as a listener
+     * Activate this service as a listener.
      */
     protected activateMessageListener(): void {
         // This swallows response attempts to the channel, since we notice them on the inbox instead
@@ -206,9 +206,9 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     }
 
     /**
-     * Deliver the payload to the service. Sourcing the relevant context has already been performed
-     * @param data - The object to be delivered to the service
-     * @returns {Promise<MessengerEmitResponse>} - Response from the service endpoint
+     * Deliver the payload to the service. Sourcing the relevant context has already been performed.
+     * @param data  The object to be delivered to the service.
+     * @returns     Response from the service endpoint.
      */
     protected sendPayload(data: FrontCommentEmitContext|FrontConversationEmitContext): Promise<MessengerEmitResponse> {
         if (data.type === 'comment') {
@@ -254,9 +254,9 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     }
 
     /**
-     * Find the ID of a user specified by username
-     * @param username - target username to search for
-     * @returns {Promise<string>} - Promise that resolves to the user id
+     * Find the ID of a user specified by username.
+     * @param username  target username to search for.
+     * @returns         Promise that resolves to the user id.
      */
     private fetchUserId(username: string): Promise<string> {
         // Request a list of all teammates
@@ -279,11 +279,11 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     }
 
     /**
-     * Attempt to find a recent conversation ID from it's subject line
-     * Done by subject because the conversation_reference provided is sometimes junk
-     * @param subject - target subject line to search for
-     * @param attemptsLeft - Since conversations take time to propagate this method may recurse
-     * @returns {Bluebird<string>} - Promise that resolves to the ID of the conversation
+     * Attempt to find a recent conversation ID from it's subject line.
+     * Done by subject because the conversation_reference provided is sometimes junk.
+     * @param subject       target subject line to search for.
+     * @param attemptsLeft  Since conversations take time to propagate this method may recurse.
+     * @returns             Promise that resolves to the ID of the conversation.
      */
     private findConversation(subject: string, attemptsLeft: number = 10): Promise<string> {
         // Find all the recent conversations
@@ -306,8 +306,8 @@ export class FrontService extends MessageService implements ServiceListener, Ser
     }
 
     /**
-     * The name of this service, as required by the framework
-     * @returns {string} - 'flowdock'
+     * The name of this service, as required by the framework.
+     * @returns {string}  'flowdock'.
      */
     get serviceName(): string {
         return FrontService._serviceName;
@@ -325,24 +325,24 @@ export class FrontService extends MessageService implements ServiceListener, Ser
 }
 
 /**
- * Build this class, typed and activated as a listener
- * @returns {ServiceListener}
+ * Build this class, typed and activated as a listener.
+ * @returns  Service Listener object, awakened and ready to go.
  */
 export function createServiceListener(): ServiceListener {
     return new FrontService(true);
 }
 
 /**
- * Build this class, typed as an emitter
- * @returns {ServiceEmitter}
+ * Build this class, typed as an emitter.
+ * @returns  Service Emitter object, ready for your events.
  */
 export function createServiceEmitter(): ServiceEmitter {
     return new FrontService(false);
 }
 
 /**
- * Build this class, typed as a message service
- * @returns {MessageService}
+ * Build this class, typed as a message service.
+ * @returns  Message Service object, ready to convert events.
  */
 export function createMessageService(): MessageService {
     return new FrontService(false);
