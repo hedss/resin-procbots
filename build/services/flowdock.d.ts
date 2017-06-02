@@ -1,9 +1,9 @@
 import * as Promise from 'bluebird';
-import { DataHub, MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext } from '../utils/message-types';
 import { FlowdockEmitContext, FlowdockHandle } from './flowdock-types';
-import { MessageService } from './message-service';
+import { Messenger } from './messenger';
+import { DataHub, MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext } from './messenger-types';
 import { ServiceEmitter, ServiceListener } from './service-types';
-export declare class FlowdockService extends MessageService implements ServiceEmitter, ServiceListener, DataHub {
+export declare class FlowdockService extends Messenger implements ServiceEmitter, ServiceListener, DataHub {
     private static _serviceName;
     private static session;
     makeGeneric(data: MessengerEvent): Promise<ReceiptContext>;
@@ -21,5 +21,5 @@ export declare class FlowdockService extends MessageService implements ServiceEm
 }
 export declare function createServiceListener(): ServiceListener;
 export declare function createServiceEmitter(): ServiceEmitter;
-export declare function createMessageService(): MessageService;
+export declare function createMessageService(): Messenger;
 export declare function createDataHub(): DataHub;

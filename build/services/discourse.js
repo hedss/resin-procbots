@@ -4,8 +4,9 @@ const Promise = require("bluebird");
 const _ = require("lodash");
 const path = require("path");
 const request = require("request-promise");
-const message_service_1 = require("./message-service");
-class DiscourseService extends message_service_1.MessageService {
+const messenger_1 = require("./messenger");
+const messenger_types_1 = require("./messenger-types");
+class DiscourseService extends messenger_1.Messenger {
     constructor() {
         super(...arguments);
         this.postsSynced = new Set();
@@ -29,14 +30,14 @@ class DiscourseService extends message_service_1.MessageService {
             topic: request(getTopic),
         })
             .then((details) => {
-            const metadata = message_service_1.MessageService.extractMetadata(details.post.raw);
+            const metadata = messenger_1.Messenger.extractMetadata(details.post.raw);
             const first = details.post.post_number === 1;
             return {
-                action: 'create',
+                action: messenger_types_1.MessengerAction.Create,
                 first,
                 genesis: metadata.genesis || data.source,
                 hidden: first ? !details.topic.visible : details.post.post_type === 4,
-                source: 'discourse',
+                source: DiscourseService._serviceName,
                 sourceIds: {
                     flow: details.topic.category_id.toString(),
                     message: details.post.id.toString(),
@@ -56,23 +57,33 @@ class DiscourseService extends message_service_1.MessageService {
             if (!title) {
                 throw new Error('Cannot create Discourse Thread without a title');
             }
-            return Promise.resolve({
-                api_token: data.toIds.token,
-                api_username: data.toIds.user,
-                category: data.toIds.flow,
-                raw: data.text + '\n\n---\n' + message_service_1.MessageService.stringifyMetadata(data),
-                title,
-                type: 'topic',
-                unlist_topic: data.hidden ? 'true' : 'false',
+            return new Promise((resolve) => {
+                resolve({
+                    endpoint: {
+                        api_key: data.toIds.token,
+                        api_username: data.toIds.user,
+                    },
+                    payload: {
+                        category: data.toIds.flow,
+                        raw: `${data.text}\n\n---\n${messenger_1.Messenger.stringifyMetadata(data)}`,
+                        title,
+                        unlist_topic: data.hidden ? 'true' : 'false',
+                    }
+                });
             });
         }
-        return Promise.resolve({
-            api_token: data.toIds.token,
-            api_username: data.toIds.user,
-            raw: data.text + '\n\n---\n' + message_service_1.MessageService.stringifyMetadata(data),
-            topic_id: topicId,
-            type: 'post',
-            whisper: data.hidden ? 'true' : 'false',
+        return new Promise((resolve) => {
+            resolve({
+                endpoint: {
+                    api_key: data.toIds.token,
+                    api_username: data.toIds.user,
+                },
+                payload: {
+                    raw: `${data.text}\n\n---\n${messenger_1.Messenger.stringifyMetadata(data)}`,
+                    topic_id: topicId,
+                    whisper: data.hidden ? 'true' : 'false',
+                },
+            });
         });
     }
     translateEventName(eventType) {
@@ -101,7 +112,7 @@ class DiscourseService extends message_service_1.MessageService {
         });
     }
     activateMessageListener() {
-        message_service_1.MessageService.app.post(`/${this.serviceName}/`, (formData, response) => {
+        messenger_1.Messenger.app.post(`/${DiscourseService._serviceName}/`, (formData, response) => {
             if (!this.postsSynced.has(formData.body.post.id)) {
                 this.postsSynced.add(formData.body.post.id);
                 this.queueEvent({
@@ -111,22 +122,19 @@ class DiscourseService extends message_service_1.MessageService {
                             type: 'post',
                         },
                         rawEvent: formData.body.post,
-                        source: this.serviceName,
+                        source: DiscourseService._serviceName,
                     },
                     workerMethod: this.handleEvent,
                 });
             }
-            response.send();
+            response.send(200);
         });
     }
     sendPayload(data) {
-        const body = _.clone(data);
-        delete body.api_token;
-        delete body.api_username;
         const requestOptions = {
-            body,
+            body: data.payload,
             json: true,
-            qs: { api_key: data.api_token, api_username: data.api_username },
+            qs: data.endpoint,
             url: `https://${process.env.DISCOURSE_INSTANCE_URL}/posts`
         };
         return request.post(requestOptions).then((resData) => {
@@ -136,7 +144,7 @@ class DiscourseService extends message_service_1.MessageService {
                     thread: resData.topic_id,
                     url: `https://${process.env.DISCOURSE_INSTANCE_URL}/t/${resData.topic_id}`
                 },
-                source: this.serviceName,
+                source: DiscourseService._serviceName,
             };
         });
     }
@@ -144,7 +152,7 @@ class DiscourseService extends message_service_1.MessageService {
         return DiscourseService._serviceName;
     }
     get apiHandle() {
-        return { discourse: this };
+        return;
     }
 }
 DiscourseService._serviceName = path.basename(__filename.split('.')[0]);

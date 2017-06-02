@@ -3,7 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const Promise = require("bluebird");
 const _ = require("lodash");
 const procbot_1 = require("../framework/procbot");
-const message_service_1 = require("../services/message-service");
+const messenger_1 = require("../services/messenger");
+const messenger_types_1 = require("../services/messenger-types");
 const logger_1 = require("../utils/logger");
 class SyncBot extends procbot_1.ProcBot {
     constructor(name = 'SyncBot') {
@@ -20,8 +21,6 @@ class SyncBot extends procbot_1.ProcBot {
                 priorFlow = focusFlow;
             }
         }
-        const hub = require(`../services/${process.env.SYNCBOT_HUB_SERVICE}`);
-        this.hub = hub.createDataHub();
     }
     register(from, to) {
         this.addServiceListener(from.service);
@@ -41,21 +40,21 @@ class SyncBot extends procbot_1.ProcBot {
             return this.getMessageService(from.service).makeGeneric(data).then((generic) => {
                 if (generic.sourceIds.flow === from.flow
                     && _.intersection([generic.source, generic.genesis], ['system', to.service]).length === 0) {
-                    const event = message_service_1.MessageService.initHandleContext(generic, to.service, { flow: to.flow });
+                    const event = messenger_1.Messenger.initInterimContext(generic, to.service, { flow: to.flow });
                     return this.useConnected(event, 'thread')
                         .then(() => {
                         this.useProvided(event, 'user')
                             .then(() => this.useHubOrGeneric(event, 'token'))
-                            .then(() => this.create(event, 'comment'))
-                            .then(() => this.logSuccess(event, 'comment'))
+                            .then(() => this.create(event))
+                            .then(() => this.logSuccess(event))
                             .catch((error) => this.handleError(error, event));
                     })
                         .catch(() => {
                         this.useProvided(event, 'user')
                             .then(() => this.useHubOrGeneric(event, 'token'))
-                            .then(() => this.create(event, 'comment'))
+                            .then(() => this.create(event))
                             .then(() => this.createConnection(event, 'thread'))
-                            .then(() => this.logSuccess(event, 'comment'))
+                            .then(() => this.logSuccess(event))
                             .catch((error) => this.handleError(error, event));
                     });
                 }
@@ -67,7 +66,7 @@ class SyncBot extends procbot_1.ProcBot {
         this.logger.log(logger_1.LogLevel.WARN, error.message);
         this.logger.log(logger_1.LogLevel.WARN, JSON.stringify(event));
         const fromEvent = {
-            action: 'create',
+            action: messenger_types_1.MessengerAction.Create,
             first: false,
             genesis: 'system',
             hidden: true,
@@ -87,8 +86,8 @@ class SyncBot extends procbot_1.ProcBot {
         };
         this.useSystem(fromEvent, 'user')
             .then(() => this.useSystem(fromEvent, 'token'))
-            .then(() => this.create(fromEvent, 'comment'))
-            .then(() => this.logSuccess(fromEvent, 'comment'))
+            .then(() => this.create(fromEvent))
+            .then(() => this.logSuccess(fromEvent))
             .catch((err) => this.logError(err, event));
     }
     getMessageService(key, data) {
@@ -101,6 +100,13 @@ class SyncBot extends procbot_1.ProcBot {
         this.messengers.set(key, created);
         return created;
     }
+    getDataHub(key, data) {
+        if (!this.hub) {
+            const service = require(`../services/${key}`);
+            this.hub = service.createDataHub(data);
+        }
+        return this.hub;
+    }
     createConnection(event, type) {
         const sourceId = event.sourceIds.thread;
         const toId = event.toIds.thread;
@@ -108,7 +114,7 @@ class SyncBot extends procbot_1.ProcBot {
             return Promise.reject(new Error(`Could not form ${type} connection`));
         }
         const genericEvent = {
-            action: 'create',
+            action: messenger_types_1.MessengerAction.Create,
             first: false,
             genesis: 'system',
             hidden: true,
@@ -134,15 +140,15 @@ class SyncBot extends procbot_1.ProcBot {
         return Promise.all([
             this.useSystem(fromEvent, 'user')
                 .then(() => this.useSystem(fromEvent, 'token'))
-                .then(() => this.create(fromEvent, 'comment'))
-                .then(() => this.logSuccess(fromEvent, 'comment')),
+                .then(() => this.create(fromEvent))
+                .then(() => this.logSuccess(fromEvent)),
             this.useSystem(toEvent, 'user')
                 .then(() => this.useSystem(toEvent, 'token'))
-                .then(() => this.create(toEvent, 'comment'))
-                .then(() => this.logSuccess(toEvent, 'comment'))
+                .then(() => this.create(toEvent))
+                .then(() => this.logSuccess(toEvent))
         ]).reduce(() => { });
     }
-    create(event, _type) {
+    create(event) {
         return this.getMessageService(event.to).makeSpecific(event).then((specific) => {
             return this.dispatchToEmitter(event.to, {
                 contexts: {
@@ -158,7 +164,7 @@ class SyncBot extends procbot_1.ProcBot {
             });
         });
     }
-    logSuccess(event, _type) {
+    logSuccess(event) {
         const output = { source: event.source, title: event.title, text: event.text, target: event.to };
         this.logger.log(logger_1.LogLevel.INFO, `Synced: ${JSON.stringify(output)}`);
     }
@@ -226,7 +232,7 @@ class SyncBot extends procbot_1.ProcBot {
             user = event.toIds.user;
         }
         if (user) {
-            return this.hub.fetchValue(user, `${event.to} ${type}`)
+            return this.getDataHub(process.env.SYNCBOT_HUB_SERVICE).fetchValue(user, `${event.to} ${type}`)
                 .then((value) => {
                 event.toIds[type] = value;
                 return value;

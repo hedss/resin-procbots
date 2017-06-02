@@ -5,51 +5,68 @@ const flowdock_1 = require("flowdock");
 const _ = require("lodash");
 const path = require("path");
 const request = require("request-promise");
-const message_service_1 = require("./message-service");
-class FlowdockService extends message_service_1.MessageService {
+const messenger_1 = require("./messenger");
+const messenger_types_1 = require("./messenger-types");
+class FlowdockService extends messenger_1.Messenger {
     makeGeneric(data) {
-        const metadata = message_service_1.MessageService.extractMetadata(data.rawEvent.content);
-        const titleAndText = metadata.content.match(/^(.*)\n--\n((?:\r|\n|.)*)$/);
-        const flow = data.cookedEvent.flow;
-        const thread = data.rawEvent.thread_id;
-        const userId = data.rawEvent.user;
-        const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
-        const returnValue = {
-            action: 'create',
-            first: data.rawEvent.id === data.rawEvent.thread.initial_message,
-            genesis: metadata.genesis || data.source,
-            hidden: metadata.hidden,
-            source: data.source,
-            sourceIds: {
-                message: data.rawEvent.id,
-                flow,
-                thread,
-                url: `https://www.flowdock.com/app/${org}/${flow}/threads/${thread}`,
-                user: 'duff',
-            },
-            text: titleAndText ? titleAndText[2] : metadata.content,
-            title: titleAndText ? titleAndText[1] : undefined,
-        };
-        if (data.rawEvent.external_user_name) {
-            returnValue.sourceIds.user = data.rawEvent.external_user_name;
-            return Promise.resolve(returnValue);
-        }
-        return this.fetchFromSession(`/organizations/${org}/users/${userId}`)
-            .then((user) => {
-            returnValue.sourceIds.user = user.nick;
-            return returnValue;
+        return new Promise((resolve) => {
+            const metadata = messenger_1.Messenger.extractMetadata(data.rawEvent.content);
+            const titleAndText = metadata.content.match(/^(.*)\n--\n((?:\r|\n|.)*)$/);
+            const flow = data.cookedEvent.flow;
+            const thread = data.rawEvent.thread_id;
+            const userId = data.rawEvent.user;
+            const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
+            const returnValue = {
+                action: messenger_types_1.MessengerAction.Create,
+                first: data.rawEvent.id === data.rawEvent.thread.initial_message,
+                genesis: metadata.genesis || data.source,
+                hidden: metadata.hidden,
+                source: data.source,
+                sourceIds: {
+                    message: data.rawEvent.id,
+                    flow,
+                    thread,
+                    url: `https://www.flowdock.com/app/${org}/${flow}/threads/${thread}`,
+                    user: 'duff',
+                },
+                text: titleAndText ? titleAndText[2] : metadata.content,
+                title: titleAndText ? titleAndText[1] : undefined,
+            };
+            if (data.rawEvent.external_user_name) {
+                returnValue.sourceIds.user = data.rawEvent.external_user_name;
+                resolve(returnValue);
+            }
+            else {
+                this.fetchFromSession(`/organizations/${org}/users/${userId}`)
+                    .then((user) => {
+                    returnValue.sourceIds.user = user.nick;
+                    resolve(returnValue);
+                });
+            }
         });
     }
     makeSpecific(data) {
         const titleText = data.first && data.title ? data.title + '\n--\n' : '';
-        return Promise.resolve({
-            content: message_service_1.MessageService.stringifyMetadata(data) + titleText + data.text,
-            event: 'message',
-            external_user_name: data.toIds.token === process.env.FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN
-                ? data.toIds.user.substring(0, 16) : undefined,
-            flow: data.toIds.flow,
-            thread_id: data.toIds.thread,
-            token: data.toIds.token,
+        const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
+        const flow = data.toIds.flow;
+        return new Promise((resolve) => {
+            resolve({
+                endpoint: {
+                    token: data.toIds.token,
+                    url: `https://api.flowdock.com/flows/${org}/${flow}/messages/`,
+                },
+                meta: {
+                    flow,
+                    org,
+                },
+                payload: {
+                    content: messenger_1.Messenger.stringifyMetadata(data) + titleText + data.text,
+                    event: 'message',
+                    external_user_name: data.toIds.token === process.env.FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN
+                        ? data.toIds.user.substring(0, 16) : undefined,
+                    thread_id: data.toIds.thread,
+                },
+            });
         });
     }
     translateEventName(eventType) {
@@ -66,7 +83,7 @@ class FlowdockService extends message_service_1.MessageService {
                 return value.content;
             }).filter((value) => {
                 const match = value.match(filter);
-                return match !== null && match.length > 0;
+                return (match !== null) && (match.length > 0);
             });
         });
     }
@@ -100,39 +117,40 @@ class FlowdockService extends message_service_1.MessageService {
                                 type: message.event,
                             },
                             rawEvent: message,
-                            source: this.serviceName,
+                            source: FlowdockService._serviceName,
                         },
                         workerMethod: this.handleEvent,
                     });
                 }
             });
         });
-        message_service_1.MessageService.app.get(`/${this.serviceName}/`, (_formData, response) => {
-            response.send('ok');
+        messenger_1.Messenger.app.get(`/${FlowdockService._serviceName}/`, (_formData, response) => {
+            response.send(200);
         });
     }
     sendPayload(data) {
-        const body = _.cloneDeep(data);
-        const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
-        const token = new Buffer(data.token).toString('base64');
-        delete body.token;
+        const token = new Buffer(data.endpoint.token).toString('base64');
         const requestOpts = {
-            body,
+            body: data.payload,
             headers: {
                 'Authorization': `Basic ${token}`,
                 'X-flowdock-wait-for-message': true,
             },
             json: true,
-            url: `https://api.flowdock.com/flows/${org}/${body.flow}/messages/`,
+            url: data.endpoint.url,
         };
         return request.post(requestOpts).then((resData) => {
+            const thread = resData.thread_id;
+            const org = data.meta ? data.meta.org : '';
+            const flow = data.meta ? data.meta.flow : '';
+            const url = data.meta ? `https://www.flowdock.com/app/${org}/${flow}/threads/${thread}` : undefined;
             return {
                 response: {
                     message: resData.id,
                     thread: resData.thread_id,
-                    url: `https://www.flowdock.com/app/${org}/${body.flow}/threads/${resData.thread_id}`,
+                    url,
                 },
-                source: this.serviceName,
+                source: FlowdockService._serviceName,
             };
         });
     }
@@ -141,11 +159,11 @@ class FlowdockService extends message_service_1.MessageService {
             .then((userId) => {
             return this.fetchFromSession(`/private/${userId}/messages`)
                 .then((fetchedMessages) => {
-                return (_.filter(fetchedMessages, (message) => {
+                return _.filter(fetchedMessages, (message) => {
                     return filter.test(message.content);
                 }).map((message) => {
                     return message.content;
-                }));
+                });
             });
         });
     }
@@ -158,9 +176,7 @@ class FlowdockService extends message_service_1.MessageService {
             if (matchingUsers.length === 1) {
                 return (matchingUsers[0].id);
             }
-            else {
-                throw new Error('Wrong number of users found in flowdock');
-            }
+            throw new Error('Wrong number of users found in flowdock');
         });
     }
     fetchFromSession(path) {

@@ -14,26 +14,29 @@
  limitations under the License.
  */
 
-import { DiscourseService } from './discourse';
-import { ServiceAPIHandle, ServiceEmitContext } from './service-types';
+import { MessengerEmitContext } from './messenger-types';
 
-export interface DiscoursePostEmitContext extends ServiceEmitContext {
-    api_username: string;
-    api_token: string;
+export interface DiscourseBasePayload {
     raw: string;
-    whisper: 'true'|'false';
-    type: 'post';
-    topic_id: string;
 }
 
-export interface DiscourseTopicEmitContext extends ServiceEmitContext {
-    api_username: string;
-    api_token: string;
+export interface DiscoursePostPayload extends DiscourseBasePayload {
+    topic_id: string;
+    whisper: string; // 'true'|'false';
+}
+
+export interface DiscourseTopicPayload extends DiscourseBasePayload {
     category: string;
-    unlist_topic: 'true'|'false';
-    raw: string;
     title: string;
-    type: 'topic';
+    unlist_topic: string; // 'true'|'false';
+}
+
+export interface DiscourseEmitContext extends MessengerEmitContext {
+    endpoint: {
+        api_key: string;
+        api_username: string;
+    };
+    payload: DiscoursePostPayload | DiscourseTopicPayload;
 }
 
 export interface DiscoursePost {

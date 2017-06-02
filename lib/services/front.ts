@@ -15,16 +15,16 @@
  */
 
 import * as Promise from 'bluebird';
-import { Comment, Conversation, Front } from 'front-sdk';
+import { Conversation, Front } from 'front-sdk';
 import * as _ from 'lodash';
 import * as path from 'path';
 import * as request from 'request-promise';
-import { MessengerEmitResponse, ReceiptContext, TransmitContext } from '../utils/message-types';
-import { FrontCommentEmitContext, FrontConversationEmitContext, FrontHandle } from './front-types';
-import { MessageService } from './message-service';
+import { FrontEmitContext, FrontHandle } from './front-types';
+import { Messenger } from './messenger';
+import { MessengerAction, MessengerEmitResponse, ReceiptContext, TransmitContext } from './messenger-types';
 import { ServiceEmitter, ServiceEvent, ServiceListener } from './service-types';
 
-export class FrontService extends MessageService implements ServiceListener, ServiceEmitter {
+export class FrontService extends Messenger implements ServiceListener, ServiceEmitter {
     private static _serviceName = path.basename(__filename.split('.')[0]);
     private static session = new Front(process.env.FRONT_LISTENER_ACCOUNT_API_TOKEN);
 
@@ -80,7 +80,7 @@ export class FrontService extends MessageService implements ServiceListener, Ser
             // Pre-calculate a couple of values, to save line width
             const message = details.event.target.data;
             const first = details.comments._results.length + details.messages._results.length === 1;
-            const metadata = MessageService.extractMetadata(message.text || message.body);
+            const metadata = Messenger.extractMetadata(message.text || message.body);
             // Attempt to find the author of a message from the various places front might store it
             let author = 'Unknown';
             if (message.author) {
@@ -94,11 +94,11 @@ export class FrontService extends MessageService implements ServiceListener, Ser
             }
             // Return the generic form of this event
             return {
-                action: 'create',
+                action: MessengerAction.Create,
                 first,
-                genesis: metadata.genesis || data.source || this.serviceName,
+                genesis: metadata.genesis || data.source || FrontService._serviceName,
                 hidden: first ? metadata.hidden : details.event.type === 'comment',
-                source: this.serviceName,
+                source: FrontService._serviceName,
                 sourceIds: {
                     flow: details.inboxes._results[0].id,
                     message: message.id,
@@ -108,7 +108,7 @@ export class FrontService extends MessageService implements ServiceListener, Ser
                 },
                 text: metadata.content,
                 title: details.event.conversation.subject,
-            } as ReceiptContext;
+            };
         });
     }
 
@@ -117,7 +117,7 @@ export class FrontService extends MessageService implements ServiceListener, Ser
      * @param data  Generic message format object to be encoded.
      * @returns     Promise that resolves to the emit suitable form.
      */
-    public makeSpecific(data: TransmitContext): Promise<FrontCommentEmitContext|FrontConversationEmitContext> {
+    public makeSpecific(data: TransmitContext): Promise<FrontEmitContext> {
         // Attempt to find the thread ID to know if this is a new conversation or not
         const conversationId = data.toIds.thread;
         if (!conversationId) {
@@ -129,42 +129,60 @@ export class FrontService extends MessageService implements ServiceListener, Ser
             return this.fetchUserId(data.toIds.user).then((userId) => {
                 // The specific form that may be emitted
                 return {
-                    author_id: userId,
-                    body: data.text + '\n\n---\n' + MessageService.stringifyMetadata(data, 'plaintext'),
-                    // Find the relevant channel for the inbox
-                    channel_id: JSON.parse(process.env.FRONT_INBOX_CHANNELS)[data.toIds.flow],
-                    metadata: {
-                        thread_ref: data.sourceIds.thread,
+                    endpoint: {
+                        method: this.apiHandle.front.message.send,
                     },
-                    options: {
-                        archive: false,
-                    },
-                    sender: {
-                        handle: data.toIds.user,
-                    },
-                    subject,
-                    to: [data.sourceIds.user],
-                    type: 'conversation',
-                } as FrontConversationEmitContext;
+                    payload: {
+                        author_id: userId,
+                        body: `${data.text}\n\n---\n${Messenger.stringifyMetadata(data, 'plaintext')}`,
+                        // Find the relevant channel for the inbox
+                        channel_id: JSON.parse(process.env.FRONT_INBOX_CHANNELS)[data.toIds.flow],
+                        metadata: {
+                            thread_ref: data.sourceIds.thread,
+                        },
+                        options: {
+                            archive: false,
+                        },
+                        sender: {
+                            handle: data.toIds.user,
+                        },
+                        subject,
+                        to: [data.sourceIds.user],
+                    }
+                };
             });
         }
         return Promise.props({
             conversation: FrontService.session.conversation.get({conversation_id: conversationId}),
             userId: this.fetchUserId(data.toIds.user)
         }).then((details: {conversation: Conversation, userId: string}) => {
+            if (data.hidden) {
+                return {
+                    endpoint: {
+                        method: this.apiHandle.front.comment.create,
+                    },
+                    payload: {
+                        author_id: details.userId,
+                        body: `${data.text}\n\n---\n${Messenger.stringifyMetadata(data, 'plaintext')}`,
+                        conversation_id: conversationId,
+                    }
+                };
+            }
             return {
-                author_id: details.userId,
-                body: data.text + '\n\n---\n' + MessageService.stringifyMetadata(data, 'plaintext'),
-                conversation_id: conversationId,
-                options: {
-                    archive: false,
+                endpoint: {
+                    method: this.apiHandle.front.message.reply,
                 },
-                sender: {
-                    handle: data.toIds.user,
-                },
-                subject: details.conversation.subject,
-                type: data.hidden ? 'comment' : 'message',
-            } as FrontCommentEmitContext;
+                payload: {
+                    author_id: details.userId,
+                    body: `${data.text}\n\n---\n${Messenger.stringifyMetadata(data, 'plaintext')}`,
+                    conversation_id: conversationId,
+                    options: {
+                        archive: false,
+                    },
+                    subject: details.conversation.subject,
+                    type: data.hidden ? 'comment' : 'message',
+                }
+            };
         });
     }
 
@@ -185,11 +203,11 @@ export class FrontService extends MessageService implements ServiceListener, Ser
      */
     protected activateMessageListener(): void {
         // This swallows response attempts to the channel, since we notice them on the inbox instead
-        MessageService.app.post('/front-dev-null', (_formData, response) => {
-            response.send();
+        Messenger.app.post('/front-dev-null', (_formData, response) => {
+            response.send(200);
         });
         // Create an endpoint for this listener and enqueue events
-        MessageService.app.post(`/${this.serviceName}/`, (formData, response) => {
+        Messenger.app.post(`/${FrontService._serviceName}/`, (formData, response) => {
             this.queueEvent({
                 data: {
                     cookedEvent: {
@@ -197,11 +215,11 @@ export class FrontService extends MessageService implements ServiceListener, Ser
                         type: 'event',
                     },
                     rawEvent: formData.body,
-                    source: this.serviceName,
+                    source: FrontService._serviceName,
                 },
                 workerMethod: this.handleEvent,
             });
-            response.send();
+            response.send(200);
         });
     }
 
@@ -210,47 +228,30 @@ export class FrontService extends MessageService implements ServiceListener, Ser
      * @param data  The object to be delivered to the service.
      * @returns     Response from the service endpoint.
      */
-    protected sendPayload(data: FrontCommentEmitContext|FrontConversationEmitContext): Promise<MessengerEmitResponse> {
-        if (data.type === 'comment') {
-            // The event is sent to the comment method
-            return FrontService.session.comment.create(data).then((comment: Comment) => {
-                return {
+    protected sendPayload(data: FrontEmitContext): Promise<MessengerEmitResponse> {
+        return data.method(data.payload).then(() => {
+            if(data.payload.conversation_id) {
+                return Promise.resolve({
                     response: {
-                        message: comment.id,
-                        thread: data.conversation_id,
+                        message: `${data.payload.author_id}:${new Date().getTime()}`,
+                        thread: data.payload.conversation_id,
+                        url: `https://app.frontapp.com/open/${data.payload.conversation_id}`,
                     },
-                    source: this.serviceName,
-                };
-            });
-        } else if (data.type === 'message') {
-            // The event is sent to the message (reply) method
-            return FrontService.session.message.reply(data).then(() => {
-                return {
-                    response: {
-                        message: `${data.author_id}:${new Date().getTime()}`,
-                        thread: data.conversation_id,
-                    },
-                    source: this.serviceName,
-                };
-            });
-        } else if (data.type === 'conversation') {
-            // The event is sent to the message (create) method
-            return FrontService.session.message.send(data).then(() => {
-                // This is because the response is ASAP and doesn't include the conversation id
-                return this.findConversation(data.subject)
-                .then((conversationId) => {
-                    return {
-                        response: {
-                            message: `${data.author_id}:${new Date().getTime()}`,
-                            thread: conversationId,
-                            url: `https://app.frontapp.com/open/${conversationId}`,
-                        },
-                        source: this.serviceName,
-                    };
+                    source: FrontService._serviceName,
                 });
+            }
+            return this.findConversation(data.payload.subject)
+            .then((conversationId) => {
+                return {
+                    response: {
+                        message: `${data.payload.author_id}:${new Date().getTime()}`,
+                        thread: conversationId,
+                        url: `https://app.frontapp.com/open/${conversationId}`,
+                    },
+                    source: FrontService._serviceName,
+                };
             });
-        }
-        throw new Error(`Front payload type ${data.type} not supported`);
+        });
     }
 
     /**
@@ -270,11 +271,13 @@ export class FrontService extends MessageService implements ServiceListener, Ser
         };
         return request(getTeammates).then((teammates: {_results: Array<{username: string, id: string}>}) => {
             // Resolve to the ID of the first matching teammate
-            return _.filter(teammates._results, (teammate) => {
-                return teammate.username === username;
-            }).map((teammate) => {
+            const teammate = _.find(teammates._results, (eachTeammate) => {
+                return eachTeammate.username === username;
+            });
+            if (teammate) {
                 return teammate.id;
-            })[0];
+            }
+            throw new Error('No teammate found for specified username');
         });
     }
 
@@ -299,9 +302,8 @@ export class FrontService extends MessageService implements ServiceListener, Ser
             // Recurse up to the specified number of times
             if (attemptsLeft > 1) {
                 return this.findConversation(subject, attemptsLeft - 1);
-            } else {
-                throw new Error('Could not find relevant conversation.');
             }
+            throw new Error('Could not find relevant conversation.');
         });
     }
 
@@ -344,6 +346,6 @@ export function createServiceEmitter(): ServiceEmitter {
  * Build this class, typed as a message service.
  * @returns  Message Service object, ready to convert events.
  */
-export function createMessageService(): MessageService {
+export function createMessageService(): Messenger {
     return new FrontService(false);
 }

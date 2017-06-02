@@ -17,24 +17,24 @@ limitations under the License.
 import * as Promise from 'bluebird';
 import * as _ from 'lodash';
 import { ProcBot } from '../framework/procbot';
-import { MessageService } from '../services/message-service';
+import { Messenger } from '../services/messenger';
+import {
+    DataHub,
+    FlowDefinition,
+    InterimContext, MessengerAction,
+    MessengerContext,
+    TransmitContext,
+} from '../services/messenger-types';
 import {
     ServiceEvent,
     ServiceListenerMethod,
     ServiceRegistration,
 } from '../services/service-types';
 import { LogLevel } from '../utils/logger';
-import {
-    DataHub,
-    FlowDefinition,
-    HandleContext,
-    MessengerContext,
-    TransmitContext,
-} from '../utils/message-types';
 
 export class SyncBot extends ProcBot {
     // These objects store built objects, typed and indexed, to help minimise object rebuilding
-    private messengers = new Map<string, MessageService>();
+    private messengers = new Map<string, Messenger>();
     private hub: DataHub;
 
     /**
@@ -55,9 +55,6 @@ export class SyncBot extends ProcBot {
                 priorFlow = focusFlow;
             }
         }
-        // Create and store the hub service
-        const hub = require(`../services/${process.env.SYNCBOT_HUB_SERVICE}`);
-        this.hub = hub.createDataHub();
     }
 
     /**
@@ -97,7 +94,7 @@ export class SyncBot extends ProcBot {
                     && _.intersection([generic.source, generic.genesis], ['system', to.service]).length === 0
                 ) {
                     // Transmute the receipt object into an intermediary form, providing flow id to initialise
-                    const event = MessageService.initHandleContext(generic, to.service, {flow: to.flow});
+                    const event = Messenger.initInterimContext(generic, to.service, {flow: to.flow});
                     // Attempt to find a connected thread
                     return this.useConnected(event, 'thread')
                     .then(() => {
@@ -105,9 +102,9 @@ export class SyncBot extends ProcBot {
                         this.useProvided(event, 'user')
                         .then(() => this.useHubOrGeneric(event, 'token'))
                         // Attempt to emit the event, massaging it first into a final form
-                        .then(() => this.create(event as TransmitContext, 'comment'))
+                        .then(() => this.create(event as TransmitContext))
                         // Emit the status of the synchronise, console and in-app
-                        .then(() => this.logSuccess(event, 'comment'))
+                        .then(() => this.logSuccess(event as TransmitContext))
                         .catch((error: Error) => this.handleError(error, event));
                     })
                     .catch(() => {
@@ -115,10 +112,10 @@ export class SyncBot extends ProcBot {
                         this.useProvided(event, 'user')
                         .then(() => this.useHubOrGeneric(event, 'token'))
                         // Attempt to emit the event and record the connection
-                        .then(() => this.create(event as TransmitContext, 'comment'))
+                        .then(() => this.create(event as TransmitContext))
                         .then(() => this.createConnection(event, 'thread'))
                         // Emit the status of the synchronise, console and in-app
-                        .then(() => this.logSuccess(event, 'comment'))
+                        .then(() => this.logSuccess(event as TransmitContext))
                         .catch((error: Error) => this.handleError(error, event));
                     });
                 }
@@ -133,13 +130,13 @@ export class SyncBot extends ProcBot {
      * @param error  error to report.
      * @param event  source event that should be reflected into target context.
      */
-    private handleError(error: Error, event: HandleContext): void {
+    private handleError(error: Error, event: InterimContext): void {
         // Put this on the log service
         this.logger.log(LogLevel.WARN, error.message);
         this.logger.log(LogLevel.WARN, JSON.stringify(event));
         // Create a message event to echo with the details
-        const fromEvent: HandleContext = {
-            action: 'create',
+        const fromEvent: InterimContext = {
+            action: MessengerAction.Create,
             first: false,
             genesis: 'system',
             hidden: true,
@@ -163,8 +160,8 @@ export class SyncBot extends ProcBot {
         this.useSystem(fromEvent, 'user')
         .then(() => this.useSystem(fromEvent, 'token'))
         // Report the error
-        .then(() => this.create(fromEvent as TransmitContext, 'comment'))
-        .then(() => this.logSuccess(fromEvent, 'comment'))
+        .then(() => this.create(fromEvent as TransmitContext))
+        .then(() => this.logSuccess(fromEvent as TransmitContext))
         .catch((err) => this.logError(err, event));
     }
 
@@ -174,7 +171,7 @@ export class SyncBot extends ProcBot {
      * @param data  Instantiation data for the service.
      * @returns     Object which implements the generic message abstract.
      */
-    private getMessageService(key: string, data?: any): MessageService {
+    private getMessageService(key: string, data?: any): Messenger {
         // Attempt to retrieve and return the existing messenger
         const retrieved = this.messengers.get(key);
         if (retrieved) {
@@ -188,12 +185,26 @@ export class SyncBot extends ProcBot {
     }
 
     /**
+     * Retrieve or create a data hub that can retrieve a user's data.
+     * @param key   Name of the hub to seek.
+     * @param data  Instantiation data for the hub.
+     * @returns     Object which implements the data hub abstract.
+     */
+    private getDataHub(key: string, data?: any): DataHub {
+        if (!this.hub) {
+            const service = require(`../services/${key}`);
+            this.hub = service.createDataHub(data);
+        }
+        return this.hub;
+    }
+
+    /**
      * Connect two threads with comments about each other.
      * @param event  Event with the two threads specified.
      * @param type   What to connect, must be thread.
      * @returns      Resolves when connection is stored.
      */
-    private createConnection(event: HandleContext, type: 'thread'): Promise<void> {
+    private createConnection(event: InterimContext, type: 'thread'): Promise<void> {
         // Find details of the threads to pair
         const sourceId = event.sourceIds.thread;
         const toId = event.toIds.thread;
@@ -201,8 +212,8 @@ export class SyncBot extends ProcBot {
             return Promise.reject(new Error(`Could not form ${type} connection`));
         }
         // Create a mutual common object for later tweaks
-        const genericEvent: HandleContext = {
-            action: 'create',
+        const genericEvent: InterimContext = {
+            action: MessengerAction.Create,
             first: false,
             genesis: 'system',
             hidden: true,
@@ -232,24 +243,22 @@ export class SyncBot extends ProcBot {
         return Promise.all([
             this.useSystem(fromEvent, 'user')
             .then(() => this.useSystem(fromEvent, 'token'))
-            .then(() => this.create(fromEvent as TransmitContext, 'comment'))
-            .then(() => this.logSuccess(fromEvent, 'comment'))
+            .then(() => this.create(fromEvent as TransmitContext))
+            .then(() => this.logSuccess(fromEvent as TransmitContext))
             ,
             this.useSystem(toEvent, 'user')
             .then(() => this.useSystem(toEvent, 'token'))
-            .then(() => this.create(toEvent as TransmitContext, 'comment'))
-            .then(() => this.logSuccess(toEvent, 'comment'))
+            .then(() => this.create(toEvent as TransmitContext))
+            .then(() => this.logSuccess(toEvent as TransmitContext))
         ]).reduce(() => { /**/ });
     }
 
-    //noinspection JSUnusedLocalSymbols
     /**
      * Pass a transmission context to the emitter.
      * @param event  Standardised transmission context to emit.
-     * @param _type  Type of event to create, must be 'comment'.
      * @returns      Promise that will resolve to the id of the created message.
      */
-    private create(event: TransmitContext, _type: 'comment'): Promise<string> {
+    private create(event: TransmitContext): Promise<string> {
         // Pass the event to the emitter
         return this.getMessageService(event.to).makeSpecific(event).then((specific) => {
             return this.dispatchToEmitter(event.to, {
@@ -269,13 +278,11 @@ export class SyncBot extends ProcBot {
         });
     }
 
-    //noinspection JSUnusedLocalSymbols
     /**
      * Record to the console some details from the event.
      * @param event  Event to record, will only pass on safe information.
-     * @param _type  Unused, type of event synchronised.
      */
-    private logSuccess(event: MessengerContext, _type: string): void {
+    private logSuccess(event: TransmitContext): void {
         const output = {source: event.source, title: event.title, text: event.text, target: event.to};
         this.logger.log(LogLevel.INFO, `Synced: ${JSON.stringify(output)}`);
     }
@@ -293,7 +300,7 @@ export class SyncBot extends ProcBot {
         this.logger.log(LogLevel.WARN, '^!!!^');
     }
 
-    private useHubOrGeneric(event: HandleContext, type: 'token'): Promise<string> {
+    private useHubOrGeneric(event: InterimContext, type: 'token'): Promise<string> {
         return this.useHub(event, type)
         .catch(() => this.useGeneric(event, type))
         .catchThrow(new Error(`Could not find hub or generic ${type} for ${event.to}`));
@@ -305,7 +312,7 @@ export class SyncBot extends ProcBot {
      * @param type   property to search for, must be 'user'.
      * @returns      Resolves to the found property.
      */
-    private useProvided(event: HandleContext, type: 'user'): Promise<string> {
+    private useProvided(event: InterimContext, type: 'user'): Promise<string> {
         return new Promise<string>((resolve) => {
             // Look in the existing object
             if (!event.sourceIds[type]) {
@@ -316,7 +323,7 @@ export class SyncBot extends ProcBot {
         });
     }
 
-    private useGeneric(event: HandleContext, type: 'user'|'token'): Promise<string> {
+    private useGeneric(event: InterimContext, type: 'user'|'token'): Promise<string> {
         return new Promise<string>((resolve) => {
             // Try to find the value specified
             const to = event.to;
@@ -335,7 +342,7 @@ export class SyncBot extends ProcBot {
      * @param type   property to search for, must be 'user' or 'token'.
      * @returns      Resolves to the found property.
      */
-    private useSystem(event: HandleContext, type: 'user'|'token'): Promise<string> {
+    private useSystem(event: InterimContext, type: 'user'|'token'): Promise<string> {
         return new Promise<string>((resolve) => {
             // Try to find the value specified
             const to = event.to;
@@ -354,7 +361,7 @@ export class SyncBot extends ProcBot {
      * @param type   property to search for, must be 'thread'.
      * @returns      Resolves to the found property.
      */
-    private useConnected(event: HandleContext, type: 'thread'): Promise<string> {
+    private useConnected(event: InterimContext, type: 'thread'): Promise<string> {
         // Check the pretext; then capture the id text (roughly speaking include base64, exclude html tag)
         const findId = new RegExp(`Connects to ${event.to} ${type} ([\\w\\d-+\\/=]+)`, 'i');
         // Retrieve from the message service search a filtered thread history
@@ -377,7 +384,7 @@ export class SyncBot extends ProcBot {
      * @param type   property to search for, must be 'token'.
      * @returns      Resolves to the found property.
      */
-    private useHub(event: HandleContext, type: 'token'): Promise<string> {
+    private useHub(event: InterimContext, type: 'token'): Promise<string> {
         let user: string | undefined = undefined;
         if (event.source === process.env.SYNCBOT_HUB_SERVICE) {
             user = event.sourceIds.user;
@@ -385,7 +392,7 @@ export class SyncBot extends ProcBot {
             user = event.toIds.user;
         }
         if (user) {
-            return this.hub.fetchValue(user, `${event.to} ${type}`)
+            return this.getDataHub(process.env.SYNCBOT_HUB_SERVICE).fetchValue(user, `${event.to} ${type}`)
             .then((value) => {
                 event.toIds[type] = value;
                 return value;

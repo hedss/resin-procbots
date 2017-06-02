@@ -19,14 +19,14 @@ import { Session } from 'flowdock';
 import * as _ from 'lodash';
 import * as path from 'path';
 import * as request from 'request-promise';
-import {
-    DataHub, MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext
-} from '../utils/message-types';
 import { FlowdockEmitContext, FlowdockHandle, FlowdockMessage } from './flowdock-types';
-import { MessageService } from './message-service';
+import { Messenger } from './messenger';
+import {
+    DataHub, MessengerAction, MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext
+} from './messenger-types';
 import { ServiceEmitter, ServiceListener } from './service-types';
 
-export class FlowdockService extends MessageService implements ServiceEmitter, ServiceListener, DataHub {
+export class FlowdockService extends Messenger implements ServiceEmitter, ServiceListener, DataHub {
     private static _serviceName = path.basename(__filename.split('.')[0]);
     private static session = new Session(process.env.FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN);
 
@@ -36,39 +36,41 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
      * @returns     A promise that resolves to the generic form of the event.
      */
     public makeGeneric(data: MessengerEvent): Promise<ReceiptContext> {
-        // Separate out some parts of the message
-        const metadata = MessageService.extractMetadata(data.rawEvent.content);
-        const titleAndText = metadata.content.match(/^(.*)\n--\n((?:\r|\n|.)*)$/);
-        const flow = data.cookedEvent.flow;
-        const thread = data.rawEvent.thread_id;
-        const userId = data.rawEvent.user;
-        const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
-        const returnValue: ReceiptContext = {
-            action: 'create',
-            first: data.rawEvent.id === data.rawEvent.thread.initial_message,
-            genesis: metadata.genesis || data.source,
-            hidden: metadata.hidden,
-            source: data.source,
-            sourceIds: {
-                message: data.rawEvent.id,
-                flow,
-                thread,
-                url: `https://www.flowdock.com/app/${org}/${flow}/threads/${thread}`,
-                user: 'duff', // gets replaced
-            },
-            text: titleAndText ? titleAndText[2] : metadata.content,
-            title: titleAndText ? titleAndText[1] : undefined,
-        };
-        // If the data provided a username
-        if (data.rawEvent.external_user_name) {
-            returnValue.sourceIds.user = data.rawEvent.external_user_name;
-            return Promise.resolve(returnValue);
-        }
-        // Attempt to find a username by id
-        return this.fetchFromSession(`/organizations/${org}/users/${userId}`)
-        .then((user) => {
-            returnValue.sourceIds.user = user.nick;
-            return returnValue;
+        return new Promise<ReceiptContext>((resolve) => {
+            // Separate out some parts of the message
+            const metadata = Messenger.extractMetadata(data.rawEvent.content);
+            const titleAndText = metadata.content.match(/^(.*)\n--\n((?:\r|\n|.)*)$/);
+            const flow = data.cookedEvent.flow;
+            const thread = data.rawEvent.thread_id;
+            const userId = data.rawEvent.user;
+            const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
+            const returnValue = {
+                action: MessengerAction.Create,
+                first: data.rawEvent.id === data.rawEvent.thread.initial_message,
+                genesis: metadata.genesis || data.source,
+                hidden: metadata.hidden,
+                source: data.source,
+                sourceIds: {
+                    message: data.rawEvent.id,
+                    flow,
+                    thread,
+                    url: `https://www.flowdock.com/app/${org}/${flow}/threads/${thread}`,
+                    user: 'duff', // gets replaced
+                },
+                text: titleAndText ? titleAndText[2] : metadata.content,
+                title: titleAndText ? titleAndText[1] : undefined,
+            };
+            // If the data provided a username
+            if (data.rawEvent.external_user_name) {
+                returnValue.sourceIds.user = data.rawEvent.external_user_name;
+                resolve(returnValue);
+            } else {
+                this.fetchFromSession(`/organizations/${org}/users/${userId}`)
+                .then((user) => {
+                    returnValue.sourceIds.user = user.nick;
+                    resolve(returnValue);
+                });
+            }
         });
     }
 
@@ -80,18 +82,30 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
     public makeSpecific(data: TransmitContext): Promise<FlowdockEmitContext> {
         // Build a string for the title, if appropriate.
         const titleText = data.first && data.title ? data.title + '\n--\n' : '';
-        return Promise.resolve({
-            // The concatenated string, of various data nuggets, to emit
-            content: MessageService.stringifyMetadata(data) + titleText + data.text,
-            event: 'message',
-            external_user_name:
-                // If this is using the generic token, then they must be an external user, so indicate this
-                data.toIds.token === process.env.FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN
-                ? data.toIds.user.substring(0, 16) : undefined,
-            flow: data.toIds.flow,
-            thread_id: data.toIds.thread,
-            token: data.toIds.token,
-        } as FlowdockEmitContext);
+        const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
+        const flow = data.toIds.flow;
+        return new Promise<FlowdockEmitContext>((resolve) => {
+            resolve({
+                endpoint: {
+                    token: data.toIds.token,
+                    url: `https://api.flowdock.com/flows/${org}/${flow}/messages/`,
+                },
+                meta: {
+                    flow,
+                    org,
+                },
+                payload: {
+                    // The concatenated string, of various data nuggets, to emit
+                    content: Messenger.stringifyMetadata(data) + titleText + data.text,
+                    event: 'message',
+                    external_user_name:
+                    // If this is using the generic token, then they must be an external user, so indicate this
+                        data.toIds.token === process.env.FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN
+                            ? data.toIds.user.substring(0, 16) : undefined,
+                    thread_id: data.toIds.thread,
+                },
+            });
+        });
     }
 
     /**
@@ -123,7 +137,7 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
             }).filter((value: string) => {
                 // Filter the response to just matches
                 const match = value.match(filter);
-                return match !== null && match.length > 0;
+                return (match !== null) && (match.length > 0);
             });
         });
     }
@@ -139,7 +153,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
         const findKey = new RegExp(`My ${key} is (\\S+)`, 'i');
         return this.fetchPrivateMessages(user, findKey).then((valueArray) => {
             const value = valueArray[valueArray.length - 1].match(findKey);
-            if (value) { return value[1]; }
+            if (value) {
+                return value[1];
+            }
             throw new Error(`Could not find value $key for $user`);
         });
     }
@@ -171,7 +187,7 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
                                 type: message.event,
                             },
                             rawEvent: message,
-                            source: this.serviceName,
+                            source: FlowdockService._serviceName,
                         },
                         workerMethod: this.handleEvent,
                     });
@@ -179,8 +195,8 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
             });
         });
         // Create a keep-alive endpoint for contexts that sleep between web requests
-        MessageService.app.get(`/${this.serviceName}/`, (_formData, response) => {
-            response.send('ok');
+        Messenger.app.get(`/${FlowdockService._serviceName}/`, (_formData, response) => {
+            response.send(200);
         });
     }
 
@@ -190,30 +206,31 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
      * @returns     Response from the service endpoint.
      */
     protected sendPayload(data: FlowdockEmitContext): Promise<MessengerEmitResponse> {
-        const body = _.cloneDeep(data);
         // Extract a couple of details from the environment
-        const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
-        const token = new Buffer(data.token).toString('base64');
-        delete body.token;
+        const token = new Buffer(data.endpoint.token).toString('base64');
         // Post to the API
         const requestOpts = {
-            body,
+            body: data.payload,
             headers: {
                 'Authorization': `Basic ${token}`,
                 'X-flowdock-wait-for-message': true,
             },
             json: true,
-            url: `https://api.flowdock.com/flows/${org}/${body.flow}/messages/`,
+            url: data.endpoint.url,
         };
         return request.post(requestOpts).then((resData: any) => {
             // Massage the response into a suitable form for the framework
+            const thread = resData.thread_id;
+            const org = data.meta ? data.meta.org : '';
+            const flow = data.meta ? data.meta.flow : '';
+            const url = data.meta ? `https://www.flowdock.com/app/${org}/${flow}/threads/${thread}` : undefined;
             return {
                 response: {
                     message: resData.id,
                     thread: resData.thread_id,
-                    url: `https://www.flowdock.com/app/${org}/${body.flow}/threads/${resData.thread_id}`,
+                    url,
                 },
-                source: this.serviceName,
+                source: FlowdockService._serviceName,
             };
         });
     }
@@ -231,11 +248,11 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
             return this.fetchFromSession(`/private/${userId}/messages`)
             .then((fetchedMessages) => {
                 // Prune and clean the message history to text of interest
-                return(_.filter(fetchedMessages, (message: FlowdockMessage) => {
+                return _.filter(fetchedMessages, (message: FlowdockMessage) => {
                     return filter.test(message.content);
                 }).map((message: FlowdockMessage) => {
                     return message.content;
-                }));
+                });
             });
         });
     }
@@ -256,9 +273,8 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
             // Return id if we've exactly one user for a particular username
             if (matchingUsers.length === 1) {
                 return(matchingUsers[0].id);
-            } else {
-                throw new Error('Wrong number of users found in flowdock');
             }
+            throw new Error('Wrong number of users found in flowdock');
         });
     }
 
@@ -274,7 +290,9 @@ export class FlowdockService extends MessageService implements ServiceEmitter, S
             FlowdockService.session.on('error', reject);
             FlowdockService.session.get(path, {}, (_error?: Error, result?: any) => {
                 FlowdockService.session.removeListener('error', reject);
-                if (result) { resolve(result); }
+                if (result) {
+                    resolve(result);
+                }
             });
         });
     }
@@ -318,11 +336,10 @@ export function createServiceEmitter(): ServiceEmitter {
  * Build this class, typed as a message service.
  * @returns  Message Service object, ready to convert events.
  */
-export function createMessageService(): MessageService {
+export function createMessageService(): Messenger {
     return new FlowdockService(false);
 }
 
-//noinspection JSUnusedGlobalSymbols
 /**
  * Build this class, typed as a data hub.
  * @returns Data Hub object, ready to retrieve user data.

@@ -20,11 +20,12 @@ import {
     WorkerEvent,
 } from '../framework/worker';
 import {
+    ServiceEmitContext,
     ServiceEmitResponse,
     ServiceEvent,
-} from '../services/service-types';
+} from './service-types';
 
-interface MessengerEvent extends ServiceEvent {
+export interface MessengerEvent extends ServiceEvent {
     cookedEvent: {
         context: string;
         type: string;
@@ -33,21 +34,24 @@ interface MessengerEvent extends ServiceEvent {
     rawEvent: any;
     source: string;
 }
-interface MessengerWorkerEvent extends WorkerEvent {
+export interface MessengerWorkerEvent extends WorkerEvent {
     data: MessengerEvent;
 }
 
+export enum MessengerAction {
+    Create,
+}
+
 // Generic forms of message objects
-interface MessengerIds {
+export interface MessengerIds {
     user?: string;
     message?: string;
     thread?: string;
-    token?: string;
     flow?: string;
     url?: string;
 }
-interface MessengerContext {
-    action: 'create';
+export interface MessengerContext {
+    action: MessengerAction;
     first: boolean;
     genesis: string;
     hidden: boolean;
@@ -55,91 +59,67 @@ interface MessengerContext {
     sourceIds?: MessengerIds;
     text: string;
     title?: string;
-    to?: string;
-    toIds?: MessengerIds;
 }
 
 // Message objects suitable for the receipt of messages
-interface ReceiptIds extends MessengerIds {
+export interface ReceiptIds extends MessengerIds {
     user: string;
     message: string;
     thread: string;
     flow: string;
-    url?: string;
 }
-interface ReceiptContext extends MessengerContext {
-    action: 'create';
-    first: boolean;
-    genesis: string;
-    hidden: boolean;
-    source: string;
+export interface ReceiptContext extends MessengerContext {
     sourceIds: ReceiptIds;
-    text: string;
-    title?: string;
 }
 
 // Message objects suitable for the handling of messages
-interface HandleIds extends MessengerIds {
-    user?: string;
-    thread?: string;
+export interface InterimIds extends MessengerIds {
     token?: string;
-    flow?: string;
-    url?: string;
 }
-interface HandleContext extends MessengerContext {
-    action: 'create';
-    first: boolean;
-    genesis: string;
-    hidden: boolean;
-    source: string;
+export interface InterimContext extends MessengerContext {
     sourceIds: ReceiptIds;
-    text: string;
-    title?: string;
     to: string;
-    toIds: HandleIds;
+    toIds: InterimIds;
 }
 
 // Message objects suitable for the transmission of messages
-interface TransmitIds extends MessengerIds {
+export interface TransmitIds extends MessengerIds {
     user: string;
-    thread?: string;
     token: string;
     flow: string;
-    url?: string;
 }
-interface TransmitContext extends MessengerContext {
-    action: 'create';
-    first: boolean;
-    genesis: string;
-    hidden: boolean;
-    source: string;
+export interface TransmitContext extends MessengerContext {
     sourceIds: ReceiptIds;
-    text: string;
-    title?: string;
     to: string;
     toIds: TransmitIds;
 }
 
-interface MessengerEmitResponse extends ServiceEmitResponse {
+export interface MessengerEmitContext extends ServiceEmitContext {
+    endpoint: object;
+    meta?: any;
+    payload: object;
+}
+
+export interface MessengerEmitResponse extends ServiceEmitResponse {
     response?: {
         message: string;
         thread: string;
         url?: string;
     };
-    err?: any;
+    err?: Error;
 }
 
-interface Metadata {
+export interface Metadata {
     genesis: string | null;
     hidden: boolean;
     content: string;
 }
 
-interface FlowDefinition {
+export interface FlowDefinition {
     service: string;
     flow: string;
 }
 
-interface DataHub {
+export interface DataHub {
     fetchValue(user: string, value: string): Promise<string>;
 }

@@ -18,12 +18,14 @@ import * as Promise from 'bluebird';
 import * as _ from 'lodash';
 import * as path from 'path';
 import * as request from 'request-promise';
-import { MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext } from '../utils/message-types';
-import { DiscoursePost, DiscoursePostEmitContext, DiscourseTopicEmitContext } from './discourse-types';
-import { MessageService } from './message-service';
+import { DiscourseEmitContext, DiscoursePost } from './discourse-types';
+import { Messenger } from './messenger';
+import {
+    MessengerAction, MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext
+} from './messenger-types';
 import { ServiceEmitter, ServiceListener } from './service-types';
 
-export class DiscourseService extends MessageService implements ServiceListener, ServiceEmitter {
+export class DiscourseService extends Messenger implements ServiceListener, ServiceEmitter {
     private static _serviceName = path.basename(__filename.split('.')[0]);
     // There are circumstances in which the discourse web-hook will fire twice for the same post, so track.
     private postsSynced = new Set<number>();
@@ -56,15 +58,15 @@ export class DiscourseService extends MessageService implements ServiceListener,
         })
         .then((details: {post: any, topic: any}) => {
             // Gather metadata and resolve
-            const metadata = MessageService.extractMetadata(details.post.raw);
+            const metadata = Messenger.extractMetadata(details.post.raw);
             const first = details.post.post_number === 1;
             return {
-                action: 'create',
+                action: MessengerAction.Create,
                 first,
                 genesis: metadata.genesis || data.source,
                 // post_type 4 seems to correspond to whisper
                 hidden: first ? !details.topic.visible : details.post.post_type === 4,
-                source: 'discourse',
+                source: DiscourseService._serviceName,
                 sourceIds: {
                     // These come in as integers, but should be strings
                     flow: details.topic.category_id.toString(),
@@ -75,7 +77,7 @@ export class DiscourseService extends MessageService implements ServiceListener,
                 },
                 text: metadata.content,
                 title: details.topic.title,
-            } as ReceiptContext;
+            };
         });
     }
 
@@ -84,7 +86,7 @@ export class DiscourseService extends MessageService implements ServiceListener,
      * @param data  Generic message format object to be encoded.
      * @returns     Promise that resolves to the emit suitable form.
      */
-    public makeSpecific(data: TransmitContext): Promise<DiscourseTopicEmitContext|DiscoursePostEmitContext> {
+    public makeSpecific(data: TransmitContext): Promise<DiscourseEmitContext> {
         // Attempt to find the thread ID to know if this is a new topic or not
         const topicId = data.toIds.thread;
         if (!topicId) {
@@ -93,25 +95,35 @@ export class DiscourseService extends MessageService implements ServiceListener,
                 throw new Error('Cannot create Discourse Thread without a title');
             }
             // A new topic request for discourse
-            return Promise.resolve({
-                api_token: data.toIds.token,
-                api_username: data.toIds.user,
-                category: data.toIds.flow,
-                raw: data.text + '\n\n---\n' + MessageService.stringifyMetadata(data),
-                title,
-                type: 'topic',
-                unlist_topic: data.hidden ? 'true' : 'false',
-            } as DiscourseTopicEmitContext);
+            return new Promise<DiscourseEmitContext>((resolve) => {
+                resolve({
+                    endpoint: {
+                        api_key: data.toIds.token,
+                        api_username: data.toIds.user,
+                    },
+                    payload: {
+                        category: data.toIds.flow,
+                        raw: `${data.text}\n\n---\n${Messenger.stringifyMetadata(data)}`,
+                        title,
+                        unlist_topic: data.hidden ? 'true' : 'false',
+                    }
+                });
+            });
         }
         // A new message request for discourse
-        return Promise.resolve({
-            api_token: data.toIds.token,
-            api_username: data.toIds.user,
-            raw: data.text + '\n\n---\n' + MessageService.stringifyMetadata(data),
-            topic_id: topicId,
-            type: 'post',
-            whisper: data.hidden ? 'true' : 'false',
-        } as DiscoursePostEmitContext);
+        return new Promise<DiscourseEmitContext>((resolve) => {
+            resolve({
+                endpoint: {
+                    api_key: data.toIds.token,
+                    api_username: data.toIds.user,
+                },
+                payload: {
+                    raw: `${data.text}\n\n---\n${Messenger.stringifyMetadata(data)}`,
+                    topic_id: topicId,
+                    whisper: data.hidden ? 'true' : 'false',
+                },
+            });
+        });
     }
 
     /**
@@ -160,7 +172,7 @@ export class DiscourseService extends MessageService implements ServiceListener,
      */
     protected activateMessageListener(): void {
         // Create an endpoint for this listener and protect against double-web-hooks
-        MessageService.app.post(`/${this.serviceName}/`, (formData, response) => {
+        Messenger.app.post(`/${DiscourseService._serviceName}/`, (formData, response) => {
             if(!this.postsSynced.has(formData.body.post.id)) {
                 this.postsSynced.add(formData.body.post.id);
                 // Enqueue the event as simply as possible
@@ -171,13 +183,13 @@ export class DiscourseService extends MessageService implements ServiceListener,
                             type: 'post',
                         },
                         rawEvent: formData.body.post,
-                        source: this.serviceName,
+                        source: DiscourseService._serviceName,
                     },
                     workerMethod: this.handleEvent,
                 });
             }
             // Thank you, bye-bye
-            response.send();
+            response.send(200);
         });
     }
 
@@ -186,16 +198,12 @@ export class DiscourseService extends MessageService implements ServiceListener,
      * @param data  The object to be delivered to the service.
      * @returns     Response from the service endpoint.
      */
-    protected sendPayload(data: DiscoursePostEmitContext|DiscourseTopicEmitContext): Promise<MessengerEmitResponse> {
-        // Extract a couple of details from out of the context
-        const body = _.clone(data);
-        delete body.api_token;
-        delete body.api_username;
+    protected sendPayload(data: DiscourseEmitContext): Promise<MessengerEmitResponse> {
         // Build and send a request to the API endpoint
         const requestOptions = {
-            body,
+            body: data.payload,
             json: true,
-            qs: { api_key: data.api_token, api_username: data.api_username },
+            qs: data.endpoint,
             url: `https://${process.env.DISCOURSE_INSTANCE_URL}/posts`
         };
         return request.post(requestOptions).then((resData) => {
@@ -206,7 +214,7 @@ export class DiscourseService extends MessageService implements ServiceListener,
                     thread: resData.topic_id,
                     url: `https://${process.env.DISCOURSE_INSTANCE_URL}/t/${resData.topic_id}`
                 },
-                source: this.serviceName,
+                source: DiscourseService._serviceName,
             };
         });
     }
@@ -248,6 +256,6 @@ export function createServiceEmitter(): ServiceEmitter {
  * Build this class, typed as a message service.
  * @returns  Message Service object, ready to convert events.
  */
-export function createMessageService(): MessageService {
+export function createMessageService(): Messenger {
     return new DiscourseService(false);
 }

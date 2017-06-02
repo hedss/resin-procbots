@@ -17,6 +17,7 @@
 import * as Promise from 'bluebird';
 import * as bodyParser from 'body-parser';
 import * as express from 'express';
+import * as _ from 'lodash';
 import { Worker } from '../framework/worker';
 import { WorkerClient } from '../framework/worker-client';
 import {
@@ -24,12 +25,12 @@ import {
     LogLevel,
 } from '../utils/logger';
 import {
-    HandleContext, HandleIds,
+    InterimContext, InterimIds,
     MessengerEmitResponse,
     MessengerEvent,
     MessengerWorkerEvent, Metadata,
     ReceiptContext, TransmitContext,
-} from '../utils/message-types';
+} from './messenger-types';
 import {
     ServiceAPIHandle,
     ServiceEmitContext,
@@ -39,7 +40,7 @@ import {
     ServiceRegistration,
 } from './service-types';
 
-export abstract class MessageService extends WorkerClient<string|null> implements ServiceListener, ServiceEmitter {
+export abstract class Messenger extends WorkerClient<string|null> implements ServiceListener, ServiceEmitter {
     /**
      * Make a handle context, using a receipt context and some extra information.
      * @param event  Event to be converted.
@@ -47,7 +48,7 @@ export abstract class MessageService extends WorkerClient<string|null> implement
      * @param toIds  Pre-populate the toIds, if desired.
      * @returns      newly created context for handling a message.
      */
-    public static initHandleContext(event: ReceiptContext, to: string, toIds: HandleIds = {}): HandleContext {
+    public static initInterimContext(event: ReceiptContext, to: string, toIds: InterimIds = {}): InterimContext {
         return {
             // Details from the ReceiptContext
             action: event.action,
@@ -71,21 +72,39 @@ export abstract class MessageService extends WorkerClient<string|null> implement
     protected static logger = new Logger();
 
     /**
+     * Retrieve from the environment array of strings to use as indicators of visibility
+     * @returns  Object of arrays of indicators, shown and hidden.
+     */
+    protected static getIndicatorArrays(): { 'shown': string[], 'hidden': string[] } {
+        let shown;
+        let hidden;
+        try {
+            // Retrieve publicity indicators from the environment
+            shown = JSON.parse(process.env.MESSAGE_CONVERTOR_PUBLIC_INDICATORS);
+            hidden = JSON.parse(process.env.MESSAGE_CONVERTOR_PRIVATE_INDICATORS);
+        } catch (error) {
+            throw new Error('Message convertor environment variables not set correctly');
+        }
+        if (shown.length === 0 || hidden.length === 0) {
+            throw new Error('Message convertor environment variables not set correctly');
+        }
+        return { hidden, shown };
+    }
+
+    /**
      * Encode the metadata of an event into a string to embed in the message.
      * @param data    event to gather details from.
      * @param format  Optional, markdown or plaintext, defaults to markdown.
      * @returns       Text with data embedded.
      */
     protected static stringifyMetadata(data: TransmitContext, format: 'markdown'|'plaintext' = 'markdown'): string {
-        // Retrieve publicity indicators from the environment
-        const publicIndicator = JSON.parse(process.env.MESSAGE_CONVERTOR_PUBLIC_INDICATORS)[0];
-        const privateIndicator = JSON.parse(process.env.MESSAGE_CONVERTOR_PRIVATE_INDICATORS)[0];
+        const indicators = Messenger.getIndicatorArrays();
         // Build the content with the indicator and genesis at the front
         switch (format) {
             case 'markdown':
-                return `[${data.hidden ? privateIndicator : publicIndicator}](${data.source})`;
+                return `[${data.hidden ? indicators.hidden[0] : indicators.shown[0]}](${data.source})`;
             case 'plaintext':
-                return `${data.hidden ? privateIndicator : publicIndicator}${data.source}`;
+                return `${data.hidden ? indicators.hidden[0] : indicators.shown[0]}${data.source}`;
             default:
                 throw new Error(`${format} format not recognised`);
         }
@@ -97,10 +116,9 @@ export abstract class MessageService extends WorkerClient<string|null> implement
      * @returns        object of content, genesis and hidden.
      */
     protected static extractMetadata(message: string): Metadata {
-        // Retrieve publicity indicators from the environment
-        const visibleArray = JSON.parse(process.env.MESSAGE_CONVERTOR_PUBLIC_INDICATORS);
-        const visible = visibleArray.join('|\\');
-        const hidden = JSON.parse(process.env.MESSAGE_CONVERTOR_PRIVATE_INDICATORS).join('|\\');
+        const indicators = Messenger.getIndicatorArrays();
+        const visible = indicators.shown.join('|\\');
+        const hidden = indicators.hidden.join('|\\');
         // Anchored with new line; followed by whitespace.
         // Captured, the show/hide; brackets to enclose.
         // Then comes genesis; parens may surround.
@@ -112,7 +130,7 @@ export abstract class MessageService extends WorkerClient<string|null> implement
             return {
                 content: message.replace(findMetadata, '').trim(),
                 genesis: metadata[2] || null,
-                hidden: !visibleArray.includes(metadata[1]),
+                hidden: !_.includes(indicators.shown, metadata[1]),
             };
         }
         // Return some default values if there wasn't any metadata
@@ -144,19 +162,19 @@ export abstract class MessageService extends WorkerClient<string|null> implement
      * @returns  Singleton express server app.
      */
     protected static get app(): express.Express {
-        if (!MessageService._app) {
+        if (!Messenger._app) {
             // Either MESSAGE_SERVICE_PORT from environment or PORT from Heroku environment
             const port = process.env.MESSAGE_SERVICE_PORT || process.env.PORT;
             if (!port) {
                 throw new Error('No inbound port specified for express server');
             }
             // Create and log an express instance
-            MessageService._app = express();
-            MessageService._app.use(bodyParser.json());
-            MessageService._app.listen(port);
-            MessageService.logger.log(LogLevel.INFO, `---> Started express webserver on port '${port}'`);
+            Messenger._app = express();
+            Messenger._app.use(bodyParser.json());
+            Messenger._app.listen(port);
+            Messenger.logger.log(LogLevel.INFO, `---> Started MessageService shared web server on port '${port}'`);
         }
-        return MessageService._app;
+        return Messenger._app;
     }
 
     /**
@@ -178,7 +196,7 @@ export abstract class MessageService extends WorkerClient<string|null> implement
         if (!this.listening) {
             this.listening = true;
             this.activateMessageListener();
-            MessageService.logger.log(LogLevel.INFO, `---> Started '${this.serviceName}' listener`);
+            Messenger.logger.log(LogLevel.INFO, `---> Started '${this.serviceName}' listener`);
         }
     }
 

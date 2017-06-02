@@ -1,17 +1,17 @@
 import * as Promise from 'bluebird';
-import { MessengerEmitResponse, ReceiptContext, TransmitContext } from '../utils/message-types';
-import { FrontCommentEmitContext, FrontConversationEmitContext, FrontHandle } from './front-types';
-import { MessageService } from './message-service';
+import { FrontEmitContext, FrontHandle } from './front-types';
+import { Messenger } from './messenger';
+import { MessengerEmitResponse, ReceiptContext, TransmitContext } from './messenger-types';
 import { ServiceEmitter, ServiceEvent, ServiceListener } from './service-types';
-export declare class FrontService extends MessageService implements ServiceListener, ServiceEmitter {
+export declare class FrontService extends Messenger implements ServiceListener, ServiceEmitter {
     private static _serviceName;
     private static session;
     fetchNotes(thread: string, _room: string, filter: RegExp): Promise<string[]>;
     makeGeneric(data: ServiceEvent): Promise<ReceiptContext>;
-    makeSpecific(data: TransmitContext): Promise<FrontCommentEmitContext | FrontConversationEmitContext>;
+    makeSpecific(data: TransmitContext): Promise<FrontEmitContext>;
     translateEventName(eventType: string): string;
     protected activateMessageListener(): void;
-    protected sendPayload(data: FrontCommentEmitContext | FrontConversationEmitContext): Promise<MessengerEmitResponse>;
+    protected sendPayload(data: FrontEmitContext): Promise<MessengerEmitResponse>;
     private fetchUserId(username);
     private findConversation(subject, attemptsLeft?);
     readonly serviceName: string;
@@ -19,4 +19,4 @@ export declare class FrontService extends MessageService implements ServiceListe
 }
 export declare function createServiceListener(): ServiceListener;
 export declare function createServiceEmitter(): ServiceEmitter;
-export declare function createMessageService(): MessageService;
+export declare function createMessageService(): Messenger;

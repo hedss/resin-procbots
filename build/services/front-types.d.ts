@@ -14,38 +14,18 @@
  limitations under the License.
  */
 
-import { Front } from 'front-sdk';
-import { ServiceAPIHandle, ServiceEmitContext } from './service-types';
+import * as Promise from 'bluebird';
+import { Front, RequestData, ResponseData, Status } from 'front-sdk';
+import { MessengerEmitContext } from './messenger-types';
+import { ServiceAPIHandle } from './service-types';
 
-export interface FrontCommentEmitContext extends ServiceEmitContext {
-    conversation_id: string;
-    author_id: string;
-    body: string;
-    options: {
-        archive: false;
+export type FrontEmitMethod = (param: RequestData) => Promise<ResponseData|Status>;
+
+export interface FrontEmitContext extends MessengerEmitContext {
+    endpoint: {
+        method: FrontEmitMethod;
     };
-    sender: {
-        handle: string;
-    };
-    subject: string;
-    type: 'message' | 'comment';
-}
-export interface FrontConversationEmitContext extends ServiceEmitContext {
-    author_id: string;
-    body: string;
-    channel_id: string;
-    metadata: {
-        thread_ref: string;
-    };
-    options: {
-        archive: false;
-    };
-    sender: {
-        handle: string;
-    };
-    subject: string;
-    to: string[];
-    type: 'conversation';
+    payload: RequestData;
 }
 export interface FrontHandle extends ServiceAPIHandle {
     front: Front;
