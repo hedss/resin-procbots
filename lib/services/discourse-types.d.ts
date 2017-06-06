@@ -43,3 +43,9 @@ export interface DiscoursePost {
     cooked: string;
     [key: string]: string;
 }
+
+export interface DiscourseConstructor {
+    token: string;
+    username: string;
+    instance: string;
+}

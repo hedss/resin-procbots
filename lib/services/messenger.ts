@@ -148,6 +148,41 @@ export abstract class Messenger extends WorkerClient<string|null> implements Ser
     private static _app: express.Express;
 
     /**
+     * Promise to find the comment history of a particular thread.
+     * @param thread  id of the thread to search.
+     * @param room    id of the room in which the thread resides.
+     * @param filter  criteria to match.
+     * @param search  Optional, some words which may be used to shortlist the results.
+     */
+    public abstract fetchNotes: (thread: string, room: string, filter: RegExp, search?: string) => Promise<string[]>;
+
+    /**
+     * Promise to turn the data enqueued into a generic message format.
+     * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
+     * @returns     A promise that resolves to the generic form of the event.
+     */
+    public abstract makeGeneric: (data: MessengerEvent) => Promise<ReceiptContext>;
+
+    /**
+     * Promise to turn a generic message format into a form suitable for emitting.
+     * @param data  Generic message format to encode.
+     * @returns     A promise that resolves to an emit context, which is as dumb as possible.
+     */
+    public abstract makeSpecific: (data: TransmitContext) => Promise<ServiceEmitContext>;
+
+    /**
+     * Awaken this class as a listener.
+     */
+    protected abstract activateMessageListener: () => void;
+
+    /**
+     * Deliver the payload to the service. Sourcing the relevant context has already been performed.
+     * @param data  The object to be delivered to the service.
+     * @returns     Response from the service endpoint.
+     */
+    protected abstract sendPayload: (data: ServiceEmitContext) => Promise<MessengerEmitResponse>;
+
+    /**
      * A boolean flag for if this object has been activated as a listener.
      * @type {boolean}.
      */
@@ -184,14 +219,15 @@ export abstract class Messenger extends WorkerClient<string|null> implements Ser
     constructor(listener: boolean) {
         super();
         if (listener) {
-            this.listen();
+            // Allow the sub-constructor to set up sessions, etc, before listening
+            process.nextTick(this.listen);
         }
     }
 
     /**
      * Start the object listening if it isn't already.
      */
-    public listen() {
+    public listen = () => {
         // Ensure the code in the child object gets executed a maximum of once
         if (!this.listening) {
             this.listening = true;
@@ -241,45 +277,11 @@ export abstract class Messenger extends WorkerClient<string|null> implements Ser
     }
 
     /**
-     * Promise to find the comment history of a particular thread.
-     * @param thread  id of the thread to search.
-     * @param room    id of the room in which the thread resides.
-     * @param filter  criteria to match.
-     */
-    public abstract fetchNotes(thread: string, room: string, filter: RegExp): Promise<string[]>
-
-    /**
-     * Promise to turn the data enqueued into a generic message format.
-     * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
-     * @returns     A promise that resolves to the generic form of the event.
-     */
-    public abstract makeGeneric(data: MessengerEvent): Promise<ReceiptContext>;
-
-    /**
-     * Promise to turn a generic message format into a form suitable for emitting.
-     * @param data  Generic message format to encode.
-     * @returns     A promise that resolves to an emit context, which is as dumb as possible.
-     */
-    public abstract makeSpecific(data: TransmitContext): Promise<ServiceEmitContext>;
-
-    /**
      * Turns the generic, messenger, name for an event into a specific trigger name for this class.
      * @param eventType  Name of the event to translate, eg 'message'.
      * @returns          This class's equivalent, eg 'post'.
      */
     public abstract translateEventName(eventType: string): string;
-
-    /**
-     * Awaken this class as a listener.
-     */
-    protected abstract activateMessageListener(): void;
-
-    /**
-     * Deliver the payload to the service. Sourcing the relevant context has already been performed.
-     * @param data  The object to be delivered to the service.
-     * @returns     Response from the service endpoint.
-     */
-    protected abstract sendPayload(data: ServiceEmitContext): Promise<MessengerEmitResponse>
 
     /**
      * Pass an event to registered listenerMethods.

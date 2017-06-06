@@ -12,6 +12,13 @@ class Messenger extends worker_client_1.WorkerClient {
         super();
         this.listening = false;
         this._eventListeners = {};
+        this.listen = () => {
+            if (!this.listening) {
+                this.listening = true;
+                this.activateMessageListener();
+                Messenger.logger.log(logger_1.LogLevel.INFO, `---> Started '${this.serviceName}' listener`);
+            }
+        };
         this.handleEvent = (event) => {
             const listeners = this._eventListeners[event.cookedEvent.type] || [];
             return Promise.map(listeners, (listener) => {
@@ -29,7 +36,7 @@ class Messenger extends worker_client_1.WorkerClient {
             return created;
         };
         if (listener) {
-            this.listen();
+            process.nextTick(this.listen);
         }
     }
     static initInterimContext(event, to, toIds = {}) {
@@ -103,13 +110,6 @@ class Messenger extends worker_client_1.WorkerClient {
             Messenger.logger.log(logger_1.LogLevel.INFO, `---> Started MessageService shared web server on port '${port}'`);
         }
         return Messenger._app;
-    }
-    listen() {
-        if (!this.listening) {
-            this.listening = true;
-            this.activateMessageListener();
-            Messenger.logger.log(logger_1.LogLevel.INFO, `---> Started '${this.serviceName}' listener`);
-        }
     }
     registerEvent(registration) {
         for (const event of registration.events) {

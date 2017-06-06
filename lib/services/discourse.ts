@@ -18,7 +18,7 @@ import * as Promise from 'bluebird';
 import * as _ from 'lodash';
 import * as path from 'path';
 import * as request from 'request-promise';
-import { DiscourseEmitContext, DiscoursePost } from './discourse-types';
+import { DiscourseConstructor, DiscourseEmitContext, DiscoursePost } from './discourse-types';
 import { Messenger } from './messenger';
 import {
     MessengerAction, MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext
@@ -29,23 +29,29 @@ export class DiscourseService extends Messenger implements ServiceListener, Serv
     private static _serviceName = path.basename(__filename.split('.')[0]);
     // There are circumstances in which the discourse web-hook will fire twice for the same post, so track.
     private postsSynced = new Set<number>();
+    private data: DiscourseConstructor;
+
+    public constructor(data: DiscourseConstructor, listen = true) {
+        super(listen);
+        this.data = data;
+    }
 
     /**
      * Promise to turn the data enqueued into a generic message format.
      * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
      * @returns     A promise that resolves to the generic form of the event.
      */
-    public makeGeneric(data: MessengerEvent): Promise<ReceiptContext> {
+    public makeGeneric = (data: MessengerEvent): Promise<ReceiptContext> => {
         // Encode once the common parts of a request
         const getGeneric = {
             json: true,
             method: 'GET',
             qs: {
-                api_key: process.env.DISCOURSE_LISTENER_ACCOUNT_API_TOKEN,
-                api_username: process.env.DISCOURSE_LISTENER_ACCOUNT_USERNAME,
+                api_key: this.data.token,
+                api_username: this.data.username,
             },
             // appended before execution
-            uri: `https://${process.env.DISCOURSE_INSTANCE_URL}`,
+            uri: `https://${this.data.instance}`,
         };
         // Gather more complete details of the enqueued event
         const getPost = _.cloneDeep(getGeneric);
@@ -86,7 +92,7 @@ export class DiscourseService extends Messenger implements ServiceListener, Serv
      * @param data  Generic message format object to be encoded.
      * @returns     Promise that resolves to the emit suitable form.
      */
-    public makeSpecific(data: TransmitContext): Promise<DiscourseEmitContext> {
+    public makeSpecific = (data: TransmitContext): Promise<DiscourseEmitContext> => {
         // Attempt to find the thread ID to know if this is a new topic or not
         const topicId = data.toIds.thread;
         if (!topicId) {
@@ -144,16 +150,16 @@ export class DiscourseService extends Messenger implements ServiceListener, Serv
      * @param _room   id of the room in which the thread resides.
      * @param filter  criteria to match.
      */
-    public fetchNotes(thread: string, _room: string, filter: RegExp): Promise<string[]> {
+    public fetchNotes = (thread: string, _room: string, filter: RegExp): Promise<string[]> => {
         // Query the API
         const getThread = {
             json: true,
             method: 'GET',
             qs: {
-                api_key: process.env.DISCOURSE_LISTENER_ACCOUNT_API_TOKEN,
-                api_username: process.env.DISCOURSE_LISTENER_ACCOUNT_USERNAME,
+                api_key: this.data.token,
+                api_username: this.data.username,
             },
-            uri: `https://${process.env.DISCOURSE_INSTANCE_URL}/t/${thread}`,
+            uri: `https://${this.data.instance}/t/${thread}`,
         };
         return request(getThread).then((threadObject) => {
             return _.map(threadObject.post_stream.posts, (item: DiscoursePost) => {
@@ -170,7 +176,7 @@ export class DiscourseService extends Messenger implements ServiceListener, Serv
     /**
      * Activate this service as a listener.
      */
-    protected activateMessageListener(): void {
+    protected activateMessageListener = (): void => {
         // Create an endpoint for this listener and protect against double-web-hooks
         Messenger.app.post(`/${DiscourseService._serviceName}/`, (formData, response) => {
             if(!this.postsSynced.has(formData.body.post.id)) {
@@ -189,7 +195,7 @@ export class DiscourseService extends Messenger implements ServiceListener, Serv
                 });
             }
             // Thank you, bye-bye
-            response.send(200);
+            response.sendStatus(200);
         });
     }
 
@@ -198,13 +204,13 @@ export class DiscourseService extends Messenger implements ServiceListener, Serv
      * @param data  The object to be delivered to the service.
      * @returns     Response from the service endpoint.
      */
-    protected sendPayload(data: DiscourseEmitContext): Promise<MessengerEmitResponse> {
+    protected sendPayload = (data: DiscourseEmitContext): Promise<MessengerEmitResponse> => {
         // Build and send a request to the API endpoint
         const requestOptions = {
             body: data.payload,
             json: true,
             qs: data.endpoint,
-            url: `https://${process.env.DISCOURSE_INSTANCE_URL}/posts`
+            url: `https://${this.data.instance}/posts`
         };
         return request.post(requestOptions).then((resData) => {
             // Translate the response from the API back into the message service
@@ -212,7 +218,7 @@ export class DiscourseService extends Messenger implements ServiceListener, Serv
                 response: {
                     message: resData.id,
                     thread: resData.topic_id,
-                    url: `https://${process.env.DISCOURSE_INSTANCE_URL}/t/${resData.topic_id}`
+                    url: `https://${this.data.instance}/t/${resData.topic_id}`
                 },
                 source: DiscourseService._serviceName,
             };
@@ -240,22 +246,22 @@ export class DiscourseService extends Messenger implements ServiceListener, Serv
  * Build this class, typed and activated as a listener.
  * @returns  Service Listener object, awakened and ready to go.
  */
-export function createServiceListener(): ServiceListener {
-    return new DiscourseService(true);
+export function createServiceListener(data: DiscourseConstructor): ServiceListener {
+    return new DiscourseService(data, true);
 }
 
 /**
  * Build this class, typed as an emitter.
  * @returns  Service Emitter object, ready for your events.
  */
-export function createServiceEmitter(): ServiceEmitter {
-    return new DiscourseService(false);
+export function createServiceEmitter(data: DiscourseConstructor): ServiceEmitter {
+    return new DiscourseService(data, false);
 }
 
 /**
  * Build this class, typed as a message service.
  * @returns  Message Service object, ready to convert events.
  */
-export function createMessageService(): Messenger {
-    return new DiscourseService(false);
+export function createMessageService(data: DiscourseConstructor): Messenger {
+    return new DiscourseService(data, false);
 }

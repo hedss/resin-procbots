@@ -23,16 +23,23 @@ class SyncBot extends procbot_1.ProcBot {
         }
     }
     register(from, to) {
-        this.addServiceListener(from.service);
-        this.addServiceEmitter(from.service);
-        const listener = this.getListener(from.service);
-        this.addServiceEmitter(to.service);
-        if (listener) {
-            listener.registerEvent({
-                events: [this.getMessageService(from.service).translateEventName('message')],
-                listenerMethod: this.createRouter(from, to),
-                name: `${from.service}:${from.flow}=>${to.service}:${to.flow}`,
-            });
+        try {
+            const fromConstructor = JSON.parse(process.env[`SYNCBOT_${from.service.toUpperCase()}_CONSTRUCTOR_OBJECT`]);
+            const toConstructor = JSON.parse(process.env[`SYNCBOT_${to.service.toUpperCase()}_CONSTRUCTOR_OBJECT`]);
+            this.addServiceListener(from.service, fromConstructor);
+            this.addServiceEmitter(from.service, fromConstructor);
+            const listener = this.getListener(from.service);
+            this.addServiceEmitter(to.service, toConstructor);
+            if (listener) {
+                listener.registerEvent({
+                    events: [this.getMessageService(from.service, fromConstructor).translateEventName('message')],
+                    listenerMethod: this.createRouter(from, to),
+                    name: `${from.service}:${from.flow}=>${to.service}:${to.flow}`,
+                });
+            }
+        }
+        catch (error) {
+            this.logger.log(logger_1.LogLevel.WARN, `Problem creating link from ${from.service} to ${to.service}: ${error.message}`);
         }
     }
     createRouter(from, to) {
@@ -211,9 +218,10 @@ class SyncBot extends procbot_1.ProcBot {
         });
     }
     useConnected(event, type) {
-        const findId = new RegExp(`Connects to ${event.to} ${type} ([\\w\\d-+\\/=]+)`, 'i');
+        const findBase = `Connects to ${event.to} ${type}`;
+        const findId = new RegExp(`${findBase} ([\\w\\d-+\\/=]+)`, 'i');
         const messageService = this.getMessageService(event.source);
-        return messageService.fetchNotes(event.sourceIds.thread, event.sourceIds.flow, findId)
+        return messageService.fetchNotes(event.sourceIds.thread, event.sourceIds.flow, findId, findBase)
             .then((result) => {
             const ids = result && result.length > 0 && result[0].match(findId);
             if (ids && ids.length > 0) {
@@ -232,14 +240,21 @@ class SyncBot extends procbot_1.ProcBot {
             user = event.toIds.user;
         }
         if (user) {
-            return this.getDataHub(process.env.SYNCBOT_HUB_SERVICE).fetchValue(user, `${event.to} ${type}`)
-                .then((value) => {
-                event.toIds[type] = value;
-                return value;
-            })
-                .catch(() => {
-                throw new Error(`Could not find hub ${type} for ${event.to}`);
-            });
+            try {
+                const hubName = process.env.SYNCBOT_HUB_SERVICE;
+                const hubConstructor = JSON.parse(process.env[`SYNCBOT_${hubName.toUpperCase()}_CONSTRUCTOR_OBJECT`]);
+                return this.getDataHub(hubName, hubConstructor).fetchValue(user, `${event.to} ${type}`)
+                    .then((value) => {
+                    event.toIds[type] = value;
+                    return value;
+                })
+                    .catch(() => {
+                    throw new Error(`Could not find hub ${type} for ${event.to}`);
+                });
+            }
+            catch (error) {
+                return Promise.reject(error);
+            }
         }
         else {
             return Promise.reject(new Error(`Could not find hub ${type} for ${event.to}`));

@@ -19,7 +19,7 @@ import { Session } from 'flowdock';
 import * as _ from 'lodash';
 import * as path from 'path';
 import * as request from 'request-promise';
-import { FlowdockEmitContext, FlowdockHandle, FlowdockMessage } from './flowdock-types';
+import { FlowdockConstructor, FlowdockEmitContext, FlowdockHandle, FlowdockMessage } from './flowdock-types';
 import { Messenger } from './messenger';
 import {
     DataHub, MessengerAction, MessengerEmitResponse, MessengerEvent, ReceiptContext, TransmitContext
@@ -28,14 +28,21 @@ import { ServiceEmitter, ServiceListener } from './service-types';
 
 export class FlowdockService extends Messenger implements ServiceEmitter, ServiceListener, DataHub {
     private static _serviceName = path.basename(__filename.split('.')[0]);
-    private static session = new Session(process.env.FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN);
+    private session: Session;
+    private data: FlowdockConstructor;
+
+    public constructor(data: FlowdockConstructor, listen = true ) {
+        super(listen);
+        this.data = data;
+        this.session = new Session(data.token);
+    }
 
     /**
      * Promise to turn the data enqueued into a generic message format.
      * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
      * @returns     A promise that resolves to the generic form of the event.
      */
-    public makeGeneric(data: MessengerEvent): Promise<ReceiptContext> {
+    public makeGeneric = (data: MessengerEvent): Promise<ReceiptContext> => {
         return new Promise<ReceiptContext>((resolve) => {
             // Separate out some parts of the message
             const metadata = Messenger.extractMetadata(data.rawEvent.content);
@@ -43,7 +50,7 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
             const flow = data.cookedEvent.flow;
             const thread = data.rawEvent.thread_id;
             const userId = data.rawEvent.user;
-            const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
+            const org = this.data.organization;
             const returnValue = {
                 action: MessengerAction.Create,
                 first: data.rawEvent.id === data.rawEvent.thread.initial_message,
@@ -79,10 +86,10 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
      * @param data  Generic message format object to be encoded.
      * @returns     Promise that resolves to the emit suitable form.
      */
-    public makeSpecific(data: TransmitContext): Promise<FlowdockEmitContext> {
+    public makeSpecific = (data: TransmitContext): Promise<FlowdockEmitContext> => {
         // Build a string for the title, if appropriate.
         const titleText = data.first && data.title ? data.title + '\n--\n' : '';
-        const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
+        const org = this.data.organization;
         const flow = data.toIds.flow;
         return new Promise<FlowdockEmitContext>((resolve) => {
             resolve({
@@ -100,8 +107,7 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
                     event: 'message',
                     external_user_name:
                     // If this is using the generic token, then they must be an external user, so indicate this
-                        data.toIds.token === process.env.FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN
-                            ? data.toIds.user.substring(0, 16) : undefined,
+                        data.toIds.token === this.data.token ? data.toIds.user.substring(0, 16) : undefined,
                     thread_id: data.toIds.thread,
                 },
             });
@@ -125,11 +131,12 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
      * @param thread  id of the thread to search.
      * @param room    id of the room in which the thread resides.
      * @param filter  criteria to match.
+     * @param search  Optional, some words which may be used to shortlist the results.
      */
-    public fetchNotes(thread: string, room: string, filter: RegExp): Promise<string[]> {
+    public fetchNotes = (thread: string, room: string, filter: RegExp, search?: string): Promise<string[]> => {
         // Query the API
-        const org = process.env.FLOWDOCK_ORGANIZATION_NAME;
-        return this.fetchFromSession(`/flows/${org}/${room}/threads/${thread}/messages`)
+        const org = this.data.organization;
+        return this.fetchFromSession(`/flows/${org}/${room}/threads/${thread}/messages`, search)
         .then((messages) => {
             return _.map(messages, (value: FlowdockMessage) => {
                 // Clean the response to just the content
@@ -163,9 +170,9 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
     /**
      * Activate this service as a listener.
      */
-    protected activateMessageListener(): void {
+    protected activateMessageListener = (): void => {
         // Get a list of known flows from the session
-        FlowdockService.session.flows((error: any, flows: any) => {
+        this.session.flows((error: any, flows: any) => {
             if (error) {
                 throw error;
             }
@@ -174,7 +181,7 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
             for (const flow of flows) {
                 flowIdToFlowName[flow.id] = flow.parameterized_name;
             }
-            const stream = FlowdockService.session.stream(Object.keys(flowIdToFlowName));
+            const stream = this.session.stream(Object.keys(flowIdToFlowName));
             // Listen to messages and check they are messages
             stream.on('message', (message: any) => {
                 if (message.event === 'message') {
@@ -196,7 +203,7 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
         });
         // Create a keep-alive endpoint for contexts that sleep between web requests
         Messenger.app.get(`/${FlowdockService._serviceName}/`, (_formData, response) => {
-            response.send(200);
+            response.sendStatus(200);
         });
     }
 
@@ -205,7 +212,7 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
      * @param data  The object to be delivered to the service.
      * @returns     Response from the service endpoint.
      */
-    protected sendPayload(data: FlowdockEmitContext): Promise<MessengerEmitResponse> {
+    protected sendPayload = (data: FlowdockEmitContext): Promise<MessengerEmitResponse> => {
         // Extract a couple of details from the environment
         const token = new Buffer(data.endpoint.token).toString('base64');
         // Post to the API
@@ -262,9 +269,9 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
      * @param username  username to search for.
      * @returns         id of the user.
      */
-    private fetchUserId(username: string): Promise<string> {
+    private fetchUserId = (username: string): Promise<string|undefined> => {
         // Get all the users of the service
-        return this.fetchFromSession(`/organizations/${process.env.FLOWDOCK_ORGANIZATION_NAME}/users`)
+        return this.fetchFromSession(`/organizations/${this.data.organization}/users`)
         .then((foundUsers) => {
             // Generate an array of user objects with matching username
             const matchingUsers = _.filter(foundUsers, (eachUser: any) => {
@@ -274,22 +281,23 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
             if (matchingUsers.length === 1) {
                 return(matchingUsers[0].id);
             }
-            throw new Error('Wrong number of users found in flowdock');
+            return undefined;
         });
     }
 
     /**
      * Utility function to structure the flowdock session as a promise a little.
-     * @param path  Endpoint to retrieve.
-     * @returns     response from the session.
+     * @param path    Endpoint to retrieve.
+     * @param search  Optional, some words which may be used to shortlist the results.
+     * @returns       response from the session.
      */
-    private fetchFromSession(path: string): Promise<any> {
+    private fetchFromSession = (path: string, search?: string): Promise<any> => {
         return new Promise<any>((resolve, reject) => {
             // The flowdock service both emits and calls back the error.
             // We're wrapping the emit in a promise reject and ignoring the call back
-            FlowdockService.session.on('error', reject);
-            FlowdockService.session.get(path, {}, (_error?: Error, result?: any) => {
-                FlowdockService.session.removeListener('error', reject);
+            this.session.on('error', reject);
+            this.session.get(path, {search}, (_error?: Error, result?: any) => {
+                this.session.removeListener('error', reject);
                 if (result) {
                     resolve(result);
                 }
@@ -311,7 +319,7 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
      */
     get apiHandle(): FlowdockHandle {
         return {
-            flowdock: FlowdockService.session
+            flowdock: this.session
         };
     }
 }
@@ -320,30 +328,30 @@ export class FlowdockService extends Messenger implements ServiceEmitter, Servic
  * Build this class, typed and activated as a listener.
  * @returns  Service Listener object, awakened and ready to go.
  */
-export function createServiceListener(): ServiceListener {
-    return new FlowdockService(true);
+export function createServiceListener(data: FlowdockConstructor): ServiceListener {
+    return new FlowdockService(data, true);
 }
 
 /**
  * Build this class, typed as an emitter.
  * @returns  Service Emitter object, ready for your events.
  */
-export function createServiceEmitter(): ServiceEmitter {
-    return new FlowdockService(false);
+export function createServiceEmitter(data: FlowdockConstructor): ServiceEmitter {
+    return new FlowdockService(data, false);
 }
 
 /**
  * Build this class, typed as a message service.
  * @returns  Message Service object, ready to convert events.
  */
-export function createMessageService(): Messenger {
-    return new FlowdockService(false);
+export function createMessageService(data: FlowdockConstructor): Messenger {
+    return new FlowdockService(data, false);
 }
 
 /**
  * Build this class, typed as a data hub.
  * @returns Data Hub object, ready to retrieve user data.
  */
-export function createDataHub(): DataHub {
-    return new FlowdockService(false);
+export function createDataHub(data: FlowdockConstructor): DataHub {
+    return new FlowdockService(data, false);
 }

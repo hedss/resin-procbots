@@ -30,3 +30,10 @@ export interface FrontEmitContext extends MessengerEmitContext {
 export interface FrontHandle extends ServiceAPIHandle {
     front: Front;
 }
+
+export interface FrontConstructor {
+    token: string;
+    inbox_channels: {
+        [inbox: string]: string;
+    };
+}

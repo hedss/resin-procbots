@@ -38,18 +38,22 @@ export SYNCBOT_SYSTEM_MESSAGE_ACCOUNTS="{
 }"
 
 # Details for the Discourse adapter
-export DISCOURSE_LISTENER_ACCOUNT_API_TOKEN="..."
-export DISCOURSE_LISTENER_ACCOUNT_USERNAME="..."
-export DISCOURSE_INSTANCE_URL="..."
+export SYNCBOT_DISCOURSE_CONSTRUCTOR_OBJECT="{
+    \"token\": \"...\",
+    \"username\": \"...\",
+    \"instance\": \"...\"
+}"
 
-# Details for the Flowdock adapter
-export FLOWDOCK_ORGANIZATION_NAME="..."
-export FLOWDOCK_LISTENER_ACCOUNT_API_TOKEN="..."
+export SYNCBOT_FLOWDOCK_CONSTRUCTOR_OBJECT="{
+    \"organization\": \"...\",
+    \"token\": \"...\"
+}"
 
-# Details for the Front adapter
-export FRONT_LISTENER_ACCOUNT_API_TOKEN="..."
-export FRONT_INBOX_CHANNELS="{
-    \"inb_blah\": \"cha_blah\"
+export SYNCBOT_FRONT_CONSTRUCTOR_OBJECT="{
+    \"token\": \"...\",
+    \"inbox_channels\": {
+        \"inb_blah\": \"cha_blah\"
+    }
 }"
 
 # Details for the Message Converter hub

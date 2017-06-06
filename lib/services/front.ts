@@ -19,14 +19,21 @@ import { Conversation, Front } from 'front-sdk';
 import * as _ from 'lodash';
 import * as path from 'path';
 import * as request from 'request-promise';
-import { FrontEmitContext, FrontHandle } from './front-types';
+import { FrontConstructor, FrontEmitContext, FrontHandle } from './front-types';
 import { Messenger } from './messenger';
 import { MessengerAction, MessengerEmitResponse, ReceiptContext, TransmitContext } from './messenger-types';
 import { ServiceEmitter, ServiceEvent, ServiceListener } from './service-types';
 
 export class FrontService extends Messenger implements ServiceListener, ServiceEmitter {
     private static _serviceName = path.basename(__filename.split('.')[0]);
-    private static session = new Front(process.env.FRONT_LISTENER_ACCOUNT_API_TOKEN);
+    private session: Front;
+    private data: FrontConstructor;
+
+    public constructor(data: FrontConstructor, listen = true) {
+        super(listen);
+        this.data = data;
+        this.session = new Front(data.token);
+    }
 
     /**
      * Promise to find the comment history of a particular thread.
@@ -34,8 +41,8 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
      * @param _room   id of the room in which the thread resides.
      * @param filter  criteria to match.
      */
-    public fetchNotes(thread: string, _room: string, filter: RegExp): Promise<string[]> {
-        return FrontService.session.conversation.listComments({conversation_id: thread})
+    public fetchNotes = (thread: string, _room: string, filter: RegExp): Promise<string[]> => {
+        return this.session.conversation.listComments({conversation_id: thread})
         .then((comments) => {
             return _.filter(comments._results, (value) => {
                 return filter.test(value.body);
@@ -50,11 +57,11 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
      * @param data  Raw data from the enqueue, remembering this is as dumb and quick as possible.
      * @returns     A promise that resolves to the generic form of the event.
      */
-    public makeGeneric(data: ServiceEvent): Promise<ReceiptContext> {
+    public makeGeneric = (data: ServiceEvent): Promise<ReceiptContext> => {
         // Calculate common request details once
         const getGeneric = {
             headers: {
-                authorization: `Bearer ${process.env.FRONT_LISTENER_ACCOUNT_API_TOKEN}`
+                authorization: `Bearer ${this.data.token}`
             },
             json: true,
             method: 'GET',
@@ -117,7 +124,7 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
      * @param data  Generic message format object to be encoded.
      * @returns     Promise that resolves to the emit suitable form.
      */
-    public makeSpecific(data: TransmitContext): Promise<FrontEmitContext> {
+    public makeSpecific = (data: TransmitContext): Promise<FrontEmitContext> => {
         // Attempt to find the thread ID to know if this is a new conversation or not
         const conversationId = data.toIds.thread;
         if (!conversationId) {
@@ -136,7 +143,7 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
                         author_id: userId,
                         body: `${data.text}\n\n---\n${Messenger.stringifyMetadata(data, 'plaintext')}`,
                         // Find the relevant channel for the inbox
-                        channel_id: JSON.parse(process.env.FRONT_INBOX_CHANNELS)[data.toIds.flow],
+                        channel_id: this.data.inbox_channels[data.toIds.flow],
                         metadata: {
                             thread_ref: data.sourceIds.thread,
                         },
@@ -153,7 +160,7 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
             });
         }
         return Promise.props({
-            conversation: FrontService.session.conversation.get({conversation_id: conversationId}),
+            conversation: this.session.conversation.get({conversation_id: conversationId}),
             userId: this.fetchUserId(data.toIds.user)
         }).then((details: {conversation: Conversation, userId: string}) => {
             if (data.hidden) {
@@ -201,10 +208,10 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
     /**
      * Activate this service as a listener.
      */
-    protected activateMessageListener(): void {
+    protected activateMessageListener = (): void => {
         // This swallows response attempts to the channel, since we notice them on the inbox instead
         Messenger.app.post('/front-dev-null', (_formData, response) => {
-            response.send(200);
+            response.sendStatus(200);
         });
         // Create an endpoint for this listener and enqueue events
         Messenger.app.post(`/${FrontService._serviceName}/`, (formData, response) => {
@@ -219,7 +226,7 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
                 },
                 workerMethod: this.handleEvent,
             });
-            response.send(200);
+            response.sendStatus(200);
         });
     }
 
@@ -228,8 +235,8 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
      * @param data  The object to be delivered to the service.
      * @returns     Response from the service endpoint.
      */
-    protected sendPayload(data: FrontEmitContext): Promise<MessengerEmitResponse> {
-        return data.method(data.payload).then(() => {
+    protected sendPayload = (data: FrontEmitContext): Promise<MessengerEmitResponse> => {
+        return data.endpoint.method(data.payload).then(() => {
             if(data.payload.conversation_id) {
                 return Promise.resolve({
                     response: {
@@ -259,11 +266,11 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
      * @param username  target username to search for.
      * @returns         Promise that resolves to the user id.
      */
-    private fetchUserId(username: string): Promise<string> {
+    private fetchUserId = (username: string): Promise<string|undefined> => {
         // Request a list of all teammates
         const getTeammates = {
             headers: {
-                authorization: `Bearer ${process.env.FRONT_LISTENER_ACCOUNT_API_TOKEN}`
+                authorization: `Bearer ${this.data.token}`
             },
             json: true,
             method: 'GET',
@@ -277,7 +284,7 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
             if (teammate) {
                 return teammate.id;
             }
-            throw new Error('No teammate found for specified username');
+            return undefined;
         });
     }
 
@@ -288,9 +295,9 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
      * @param attemptsLeft  Since conversations take time to propagate this method may recurse.
      * @returns             Promise that resolves to the ID of the conversation.
      */
-    private findConversation(subject: string, attemptsLeft: number = 10): Promise<string> {
+    private findConversation = (subject: string, attemptsLeft: number = 10): Promise<string> => {
         // Find all the recent conversations
-        return FrontService.session.conversation.list().then((response) => {
+        return this.session.conversation.list().then((response) => {
             // Filter these down to matching conversations
             const conversationsMatched = _.filter(response._results, (conversation) => {
                 return conversation.subject === subject;
@@ -321,7 +328,7 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
      */
     get apiHandle(): FrontHandle {
         return {
-            front: FrontService.session
+            front: this.session
         };
     }
 }
@@ -330,22 +337,22 @@ export class FrontService extends Messenger implements ServiceListener, ServiceE
  * Build this class, typed and activated as a listener.
  * @returns  Service Listener object, awakened and ready to go.
  */
-export function createServiceListener(): ServiceListener {
-    return new FrontService(true);
+export function createServiceListener(data: FrontConstructor): ServiceListener {
+    return new FrontService(data, true);
 }
 
 /**
  * Build this class, typed as an emitter.
  * @returns  Service Emitter object, ready for your events.
  */
-export function createServiceEmitter(): ServiceEmitter {
-    return new FrontService(false);
+export function createServiceEmitter(data: FrontConstructor): ServiceEmitter {
+    return new FrontService(data, false);
 }
 
 /**
  * Build this class, typed as a message service.
  * @returns  Message Service object, ready to convert events.
  */
-export function createMessageService(): Messenger {
-    return new FrontService(false);
+export function createMessageService(data: FrontConstructor): Messenger {
+    return new FrontService(data, false);
 }

@@ -56,3 +56,8 @@ export interface FlowdockMessage {
 export interface FlowdockHandle extends ServiceAPIHandle {
     flowdock: Session;
 }
+
+export interface FlowdockConstructor {
+    organization: string;
+    token: string;
+}
