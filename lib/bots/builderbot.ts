@@ -17,12 +17,19 @@ limitations under the License.
 // BuilderBot listens for merges of a PR to the `master` branch and then
 // updates any packages for it.
 import * as Promise from 'bluebird';
+import * as ChildProcess from 'child_process';
 import * as GithubApi from 'github';
+import * as path from 'path';
+import { track } from 'temp';
 import * as GithubApiTypes from '../apis/githubapi-types';
 import { ProcBot } from '../framework/procbot';
-import { GithubHandle, GithubRegistration } from '../services/github-types';
+import { GithubCookedData, GithubHandle, GithubRegistration } from '../services/github-types';
 import { ServiceEvent } from '../services/service-types';
 import { LogLevel } from '../utils/logger';
+
+const exec: (command: string, options?: any) => Promise<{}> = Promise.promisify(ChildProcess.exec);
+const tempMkdir = Promise.promisify(track().mkdir);
+// const tempCleanup = Promise.promisify(cleanup);
 
 export class BuilderBot extends ProcBot {
     /** Github ServiceListener. */
@@ -92,10 +99,38 @@ export class BuilderBot extends ProcBot {
     }
 
     protected buildCode = (_registration: GithubRegistration, event: ServiceEvent): Promise<void> => {
+        const cookedData: GithubCookedData = event.cookedEvent;
+        const authToken = cookedData.githubAuthToken;
         const pushEvent: GithubApiTypes.PushEvent = event.cookedEvent.data;
-        this.logger.log(LogLevel.INFO, 'Received a push event');
-        console.log(pushEvent);
-        return Promise.resolve();
+        const repo = pushEvent.repository;
+        const fullName = repo.full_name;
+        const owner = repo.owner.login;
+        const repoName = repo.name;
+        const branchRef = pushEvent.ref;
+        const cliCommand = (command: string) => {
+            return exec(command, { cwd: fullPath });
+
+        };
+        let fullPath = '';
+        this.logger.log(LogLevel.INFO, `Received a push event from the ${branchRef} of ${owner}/${repoName}`);
+
+        // Clone the repo into a temporary directory.
+        return tempMkdir(`${owner}-${repoName}`).then((tempDir) => {
+            fullPath = `${tempDir}${path.sep}`;
+            this.logger.log(LogLevel.INFO, `Cloning into ${fullPath}`);
+
+            return Promise.mapSeries([
+                `git clone https://${authToken}:${authToken}@github.com/${fullName} ${fullPath}`,
+                `git checkout ${branchRef}`
+            ], cliCommand);
+        }).then(() => {
+            // Now get a tar stream of it to send to the builder.
+            // The repo is in the `fullPath` directory.
+        }).then(() => {
+            // Send to builder.
+
+            // Bin the directory.
+        }); // .finally(tempCleanup);
     }
 }
 

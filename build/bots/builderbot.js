@@ -1,16 +1,40 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const Promise = require("bluebird");
+const ChildProcess = require("child_process");
+const path = require("path");
+const temp_1 = require("temp");
 const procbot_1 = require("../framework/procbot");
 const logger_1 = require("../utils/logger");
+const exec = Promise.promisify(ChildProcess.exec);
+const tempMkdir = Promise.promisify(temp_1.track().mkdir);
 class BuilderBot extends procbot_1.ProcBot {
     constructor(integration, name, pemString, webhook) {
         super(name);
         this.buildCode = (_registration, event) => {
+            const cookedData = event.cookedEvent;
+            const authToken = cookedData.githubAuthToken;
             const pushEvent = event.cookedEvent.data;
-            this.logger.log(logger_1.LogLevel.INFO, 'Received a push event');
-            console.log(pushEvent);
-            return Promise.resolve();
+            const repo = pushEvent.repository;
+            const fullName = repo.full_name;
+            const owner = repo.owner.login;
+            const repoName = repo.name;
+            const branchRef = pushEvent.ref;
+            const cliCommand = (command) => {
+                return exec(command, { cwd: fullPath });
+            };
+            let fullPath = '';
+            this.logger.log(logger_1.LogLevel.INFO, `Received a push event from the ${branchRef} of ${owner}/${repoName}`);
+            return tempMkdir(`${owner}-${repoName}`).then((tempDir) => {
+                fullPath = `${tempDir}${path.sep}`;
+                this.logger.log(logger_1.LogLevel.INFO, `Cloning into ${fullPath}`);
+                return Promise.mapSeries([
+                    `git clone https://${authToken}:${authToken}@github.com/${fullName} ${fullPath}`,
+                    `git checkout ${branchRef}`
+                ], cliCommand);
+            }).then(() => {
+            }).then(() => {
+            });
         };
         const ghListener = this.addServiceListener('github', {
             client: name,
