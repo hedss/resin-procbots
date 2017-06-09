@@ -32,6 +32,39 @@ export interface PullRequestReviewEvent {
     pull_request: PullRequest;
 }
 
+export interface PushEvent {
+    ref: string;
+    before: string;
+    after: string;
+    created: boolean;
+    deleted: boolean;
+    forced: boolean;
+    base_ref: string | null;
+    compare: string;
+    size: number;
+    commits: Commit[];
+    head_commit: Commit;
+    repository: {
+        id: string;
+        name: string;
+        full_name: string;
+        owner: {
+            name: string;
+            email: string;
+            login: string;
+        };
+        private: boolean;
+    };
+    pusher: {
+        name: string;
+        email: string;
+    };
+    sender: {
+        login: string;
+        id: string;
+    };
+}
+
 export interface StatusEventBranch {
     name: string;
     commit: {
