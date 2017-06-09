@@ -8,6 +8,7 @@ const procbot_1 = require("../framework/procbot");
 const logger_1 = require("../utils/logger");
 const exec = Promise.promisify(ChildProcess.exec);
 const tempMkdir = Promise.promisify(temp_1.track().mkdir);
+const tempCleanup = Promise.promisify(temp_1.cleanup);
 class BuilderBot extends procbot_1.ProcBot {
     constructor(integration, name, pemString, webhook) {
         super(name);
@@ -34,7 +35,7 @@ class BuilderBot extends procbot_1.ProcBot {
                 ], cliCommand);
             }).then(() => {
             }).then(() => {
-            });
+            }).finally(tempCleanup);
         };
         const ghListener = this.addServiceListener('github', {
             client: name,

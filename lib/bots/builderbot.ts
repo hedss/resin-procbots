@@ -20,7 +20,7 @@ import * as Promise from 'bluebird';
 import * as ChildProcess from 'child_process';
 import * as GithubApi from 'github';
 import * as path from 'path';
-import { track } from 'temp';
+import { cleanup, track } from 'temp';
 import * as GithubApiTypes from '../apis/githubapi-types';
 import { ProcBot } from '../framework/procbot';
 import { GithubCookedData, GithubHandle, GithubRegistration } from '../services/github-types';
@@ -29,7 +29,7 @@ import { LogLevel } from '../utils/logger';
 
 const exec: (command: string, options?: any) => Promise<{}> = Promise.promisify(ChildProcess.exec);
 const tempMkdir = Promise.promisify(track().mkdir);
-// const tempCleanup = Promise.promisify(cleanup);
+const tempCleanup = Promise.promisify(cleanup);
 
 export class BuilderBot extends ProcBot {
     /** Github ServiceListener. */
@@ -130,7 +130,7 @@ export class BuilderBot extends ProcBot {
             // Send to builder.
 
             // Bin the directory.
-        }); // .finally(tempCleanup);
+        }).finally(tempCleanup);
     }
 }
 
